@@ -1,14 +1,3 @@
-/*
-**  test appending a node at the end of the list. print the result
-**  and then free the memory. a user defined function is called to free
-**  the data.
-**
-**  Development History:
-**      who                  when           why
-**      ma_muquit@fccc.edu   Aug-09-1998    first cut
-*/
-
-
 #include "sll.h"
 #include <unistd.h>
 #include <stdio.h>
@@ -20,16 +9,17 @@
 typedef struct{
 	int addr;	// meter attribute register start address
 	int reg_num;	//meter attribute register number
-	int scale;	//attribute value scale
-	char*  value_type;	//typde of the value: float,int,long{0,1,2}	
-	char*  value_unit;  //type of the value unit: KWh,KVarh,Volt
-	char*  total_diff;
+	int constant;	//attribute value constant
+	char* value_type;	//typde of the value: float,int,long{0,1,2}	
+	char* value_unit;  //type of the value unit: KWh,KVarh,Volt
+	char* total_diff;
+	char* tag_id;
 }Meter_Attribute;
 
 typedef struct{
 	char *name;
 	int modbus_id;
-	int num_attribute;
+	int attr_num;
 	Meter_Attribute *attribute;
 	Meter_Attribute *current_attr;
 	char *sender_id;
@@ -107,10 +97,10 @@ bool load_attr_config()
             		meter->current_attr->reg_num = atoi(value); 
             		printf(" reg num  is  %d.\n",meter->current_attr->reg_num);
         	}
-        	if (NULL != (value = uci_lookup_option_string(ctx, s, "scale")))
+        	if (NULL != (value = uci_lookup_option_string(ctx, s, "constant")))
         	{
-            		meter->current_attr->scale = atoi(value); 
-            		printf(" scale  is  %d.\n",meter->current_attr->scale);
+            		meter->current_attr->constant = atoi(value); 
+            		printf(" constant  is  %d.\n",meter->current_attr->constant);
         	}
         	if (NULL != (value = uci_lookup_option_string(ctx, s, "value_type")))
         	{
@@ -126,6 +116,11 @@ bool load_attr_config()
         	{
             		meter->current_attr->total_diff = strdup(value); 
             		printf(" total_diff  %s.\n",meter->current_attr->value_unit);
+        	}
+        	if (NULL != (value = uci_lookup_option_string(ctx, s, "tag_id")))
+        	{
+            		meter->current_attr->tag_id = strdup(value); 
+            		printf(" tag_id  %s.\n",meter->current_attr->tag_id);
         	}
 					
 			meter->current_attr++;
@@ -200,10 +195,10 @@ bool load_meter_config()
             		addr->modbus_id = atoi(value); 
             		printf(" modbus_id is %d.\n",addr->modbus_id);
         	}
-        	if (NULL != (value = uci_lookup_option_string(ctx, s, "num_attribute")))
+        	if (NULL != (value = uci_lookup_option_string(ctx, s, "attr_num")))
         	{
-            		addr->num_attribute = atoi(value); 
-            		printf(" num_attribute is %d.\n",addr->num_attribute);
+            		addr->attr_num = atoi(value); 
+            		printf(" attr_num is %d.\n",addr->attr_num);
         	}
         	if (NULL != (value = uci_lookup_option_string(ctx, s, "sender_id")))
         	{
@@ -245,7 +240,9 @@ bool load_meter_config()
             		addr->commodity = strdup(value); 
             		printf(" commodity is %s.\n",addr->commodity);
         	}
-    		addr->attribute = (Meter_Attribute *) malloc(addr->num_attribute * sizeof(Meter_Attribute));
+
+		//should verify the existance of option attr_num before alloc memory for attr
+    		addr->attribute = (Meter_Attribute *) malloc(addr->attr_num * sizeof(Meter_Attribute));
     		if(addr->attribute == NULL)
     		{
 				(void)fprintf(stderr," Attribute:malloc failed\n");
@@ -277,10 +274,10 @@ int main (int argc,char **argv)
 
     	Meter_Attribute *attribute = addr->attribute;
     	int i;
-    	for(i = 0; i < addr->num_attribute && attribute; i++,attribute++){
+    	for(i = 0; i < addr->attr_num && attribute; i++,attribute++){
     		printf("  %d\n",attribute->addr);
     		printf("  %d\n",attribute->reg_num);
-    		printf("  %d\n",attribute->scale);
+    		printf("  %d\n",attribute->constant);
     		printf("  %s\n",attribute->value_type);
     		printf("  %s\n",attribute->value_unit);
     		printf("\n");
@@ -310,7 +307,7 @@ static void freeData(void **data)
     {
 	(void) fprintf(stderr,"Freeing Meter Attributes First.\n");
     int i;
-	for(i = 0; i< (*addr)->num_attribute; i++){
+	for(i = 0; i< (*addr)->attr_num; i++){
 		if( (*addr)->attribute)
 		{
 			(void)fprintf(stderr,"Freeing value_type and value unit.\n");
