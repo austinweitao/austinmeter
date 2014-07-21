@@ -15,44 +15,38 @@
 
 #include "unit-test.h"
 #include <curl/curl.h>
-#define UPLOAD_FILE_AS  "while-uploading.txt"
-#define REMOTE_URL      "ftp://cwt:110weitao660@192.168.5.51:990/"  UPLOAD_FILE_AS
 
-enum {
-    TCP,
-    TCP_PI,
-    RTU
-};
-
-
-#define CLOCKID CLOCK_REALTIME
+#define	    METER_FILE_LOCATION	"/meters/"
+#define	    UPLOAD_FILE_AS	"while-uploading.txt"
+#define	    REMOTE_URL		"ftp://cwt:110weitao660@192.168.5.51:990/"  UPLOAD_FILE_AS
+#define	    CLOCKID CLOCK_REALTIME
 
 //#define USER_UCI_SAMPLE_INTERVAL (85 * SECSPERMIN)
 //#define USER_UCI_UPLOAD_INTERVAL (30 * SECSPERMIN)
-#define USER_UCI_SAMPLE_INTERVAL (10)
-#define USER_UCI_UPLOAD_INTERVAL (80)
-#define SECSPERHOUR 3600
-#define SECSPERMIN 60	
-#define INTERVAL_CMEP "00000005"
+#define	    USER_UCI_SAMPLE_INTERVAL	(10)
+#define	    USER_UCI_UPLOAD_INTERVAL	(80)
+#define	    SECSPERHOUR			 3600
+#define	    SECSPERMIN			60	
+#define	    INTERVAL_CMEP		"00000005"
 
 
-#define METER_UCI_CONFIG_FILE "/etc/config/meter"
-#define GATEWAY_UCI_CONFIG_FILE "/etc/config/gateway"
-#define FTP_UCI_CONFIG_FILE "/etc/config/ftp"
+#define	    METER_UCI_CONFIG_FILE   "/etc/config/meter"
+#define	    GATEWAY_UCI_CONFIG_FILE "/etc/config/gateway"
+#define	    FTP_UCI_CONFIG_FILE	    "/etc/config/ftp"
 
-#define UCI_SAMPLE_INTERVAL "gateway.general.sample_interval"
-#define CUSTOM_UCI_SAMPLE_INTERVAL "gateway.general.custom_sample_interval"
-#define UCI_GATEWAY_TYPE "gateway.general.gw_type"
-#define UCI_FILE_PREFIX "gateway.general.file_prefix"
-#define UCI_V2_TYPE "gateway.general.v2_type"
-#define UCI_UPLOAD_INTERVAL "ftp.general.upload_interval"
-#define CUSTOM_UCI_SAMPLE_INTERVAL "ftp.general.custom_upload_interval"
-#define UCI_FTP_ADDR "ftp.general.ftp_addr"
-#define UCI_FTP_PORT "ftp.general.ftp_port"
-#define UCI_FTP_USER_NAME "ftp.general.ftp_user_name"
-#define UCI_FTP_PASSWORD "ftp.general.ftp_password"
-#define UCI_FTP_FILE_PATH "ftp.general.ftp_file_path"
-#define UCI_FTP_SSL "ftp.general.ftp_ssl"
+#define	    UCI_SAMPLE_INTERVAL		"gateway.general.sample_interval"
+#define	    CUSTOM_UCI_SAMPLE_INTERVAL  "gateway.general.custom_sample_interval"
+#define	    UCI_GATEWAY_TYPE		"gateway.general.gw_type"
+#define	    UCI_FILE_PREFIX		"gateway.general.file_prefix"
+#define	    UCI_V2_TYPE			"gateway.general.v2_type"
+#define	    UCI_UPLOAD_INTERVAL		"ftp.general.upload_interval"
+#define	    CUSTOM_UCI_SAMPLE_INTERVAL	"ftp.general.custom_upload_interval"
+#define	    UCI_FTP_ADDR		"ftp.general.ftp_addr"
+#define	    UCI_FTP_PORT		"ftp.general.ftp_port"
+#define	    UCI_FTP_USER_NAME		"ftp.general.ftp_user_name"
+#define	    UCI_FTP_PASSWORD		"ftp.general.ftp_password"
+#define	    UCI_FTP_FILE_PATH		"ftp.general.ftp_file_path"
+#define	    UCI_FTP_SSL			"ftp.general.ftp_ssl"
 
 typedef struct{
     int addr;	// meter attribute register start address
@@ -66,34 +60,23 @@ typedef struct{
 
 typedef struct{
     char *name;
-	int modbus_id;
-	int attr_num;
-	Meter_Attribute *attribute;
-	Meter_Attribute *current_attr;
-	char *sender_id;
-	char *receiver_id;
-	char *customer_id;
-	char *customer_name;
-	char *account_id;
-	char *account_name;
-	char *meter_id;
-	char *commodity;
-	char *file_path;	//file path for sampling data file
-	char *file_tmp_path;
-	char *file_name;
-//	char *file_path_xml;	//file path for sampling data file
-//	char *file_tmp_path_xml;
-//	char *file_name_xml;
-//	char *file_path_csv;	//file path for sampling data file
-//	char *file_tmp_path_csv;
-//	char *file_name_csv;
-	FILE * file;		//file descriptor for sampling data file
-	FILE * file_tmp;		//file descriptor for sampling data file
-//	FILE * file_xml;		//file descriptor for sampling data file
-//	FILE * file_tmp_xml;		//file descriptor for sampling data file
-//	FILE * file_csv;		//file descriptor for sampling data file
-//	FILE * file_tmp_csv;		//file descriptor for sampling data file
-
+    int modbus_id;
+    int attr_num;
+    Meter_Attribute *attribute;
+    Meter_Attribute *current_attr;
+    char *sender_id;
+    char *receiver_id;
+    char *customer_id;
+    char *customer_name;
+    char *account_id;
+    char *account_name;
+    char *meter_id;
+    char *commodity;
+    char *file_path;	//file path for sampling data file
+    char *file_tmp_path;
+    char *file_name;
+    FILE * file;		//file descriptor for sampling data file
+    FILE * file_tmp;		//file descriptor for sampling data file
 }Meter;
 
 float modbus_get_float_cdab(uint16_t* value)
@@ -374,11 +357,11 @@ void meter_init(void)
 enum output_format
 {
     cmep = 0;
-    v2_xml;
-    v2_csv;
+    xml;
+    csv;
 };
 output_format meter_opfm;
-char file_prefix[8] = {0};
+char output_file_prefix[8] = {0};
 
 int meter_output_prefix(void){
     struct uci_ptr p;
@@ -392,7 +375,7 @@ int meter_output_prefix(void){
     }
 
     printf("%s\n", p.o->v.string);
-    strcpy(file_prefix,p.o->v.string);
+    strcpy(output_file_prefix,p.o->v.string);
 
     return 0;
 
@@ -424,12 +407,12 @@ int meter_output_format(void){
 	    return -1;
 	}
 	if(!strcmp(p.o->v.string,"xml")){
-	    meter_opfm = v2_xml;
+	    meter_opfm = xml;
 	    uci_free_context (ctx);
 	    return 0;
 	}
 	else if(!strcmp(p.o->v.string,"csv")){
-	    meter_opfm = v2_csv;
+	    meter_opfm = csv;
 	    uci_free_context (ctx);
 	    return 0;
 	}
@@ -483,15 +466,6 @@ int ftp_init(void)
     printf("%s\n", p.o->v.string);
     ftp_config->ftp_port = strdup(p.o->v.string);
 
-    if (uci_lookup_ptr (ctx, &p, UCI_FTP_PORT, true) != UCI_OK)
-    {
-	uci_perror (ctx, "XXX");
-	ret = -1;
-	goto cleanup;
-    }
-    printf("%s\n", p.o->v.string);
-    ftp_config->ftp_port = strdup(p.o->v.string);
-
     if (uci_lookup_ptr (ctx, &p, UCI_FTP_USER_NAME, true) != UCI_OK)
     {
 	uci_perror (ctx, "XXX");
@@ -528,13 +502,12 @@ int ftp_init(void)
     printf("%s\n", p.o->v.string);
     ftp_config->ftp_SSL = strdup(p.o->v.string);
 
-    uci_unload(ctx, pkg); // 释放 pkg 
 cleanup:
     uci_free_context(ctx);
     ctx = NULL;
     return ret;
 }
-//unit:seconds
+//unit:minutes
 typedef struct {
 	int sample_interval;
 	int upload_interval;
@@ -749,9 +722,9 @@ static void upload_file(char *file_to_upload, char *rename_to)
 }
 
 // sample thread start function which runs when sampling interval expires
+
 void timer_thread_sample(union sigval v)
 {
-
 
     /*  thread shared resources
 	super important, be aware of mutual exclusion
@@ -804,70 +777,42 @@ void timer_thread_sample(union sigval v)
 
 	//sample data file gets created the first time sample interval timer expires
 	if(counter == 1){
-	    //file name to save
-	    sprintf(file_name,"%s_%s.cmep",meter->modbus_id,(info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,info->tm_sec);
-	    //file_path store the final file to upload
-	    sprintf(file_path,"/tmp/sbs%d_%4d%02d%02d%02d%02d%02d_001.cmep",meter->modbus_id,(info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,info->tm_sec);
-	    //file_path_tmp store the tmp file
-	    sprintf(file_tmp_path,"/tmp/sbs%d_%4d%02d%02d%02d%02d%02d_001_tmp.cmep",meter->modbus_id,(info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,info->tm_sec);
 
-
+	    char postfix[8] = {0};
+	    switch(meter_opfm){
+		case cmep: strcpy(postfix,"cmep");break;
+		case xml : strcpy(postfix,"xml");break;
+		case csv : strcpy(postfix,"csv");break;
+	    }
+	    sprintf(file_name,"%s_%s_001.%s",output_file_prefix,time_local_file,postfix);
+	    sprintf(file_path,"%s%s",METER_FILE_LOCATION,file_name);
+	    sprintf(file_path,"%s%s_tmp",METER_FILE_LOCATION,file_name);
 	    meter->file_path = strdup(file_path);
 	    meter->file_tmp_path = strdup(file_tmp_path);
 	    meter->file_name = strdup(file_name);
 
-	    meter->file_path_xml = strdup(file_path_xml);
-	    meter->file_tmp_path_xml = strdup(file_tmp_path_xml);
-	    meter->file_name_xml = strdup(file_name_xml);
+
+	    if (meter->file_path == NULL || meter->file_tmp_path == NULL || meter->file_name) 
+	    {
+		(void) fprintf(stderr,"malloc failed\n");
+       		exit(-1);
+	    }
+	    (void )fprintf(stderr,"the file name is %s.\n",meter->file_name);
+	    (void )fprintf(stderr,"the file path is %s.\n",meter->file_path);
+	    (void )fprintf(stderr,"the tmp file path is %s.\n",meter->file_tmp_path);
+	}
+	(void )fprintf(stderr,"opening file %s.\n",meter->file_tmp_path);
+
+	meter->file = fopen(meter->file_tmp_path,"a");			
+	if(meter->file == NULL)
+	    perror("fopen failed:");
+
+	//if(counter == 1){
+	//	fprintf(meter->file_xml,"<?xml_version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>\n<XML>\n"  "<action type=\"update\">\n");
+	//		fprintf(meter->file_csv,"###ACTION:UPDATE ENTITY:MeterData SCHEMA:Default VERSION:1.0.0\n");
+	//}
 
 
-	    meter->file_path_csv = strdup(file_path_csv);
-	    meter->file_tmp_path_csv = strdup(file_tmp_path_csv);
-	    meter->file_name_csv = strdup(file_name_csv);
-
-    		if (meter->file_path == NULL || meter->file_tmp_path == NULL) 
-    		{
-       			(void) fprintf(stderr,"malloc failed\n");
-       			exit(-1);
-    		}
-    		if (meter->file_path_xml == NULL || meter->file_tmp_path_xml == NULL) 
-    		{
-       			(void) fprintf(stderr,"malloc failed\n");
-       			exit(-1);
-    		}
-    		if (meter->file_path_csv == NULL || meter->file_tmp_path_csv == NULL) 
-    		{
-       			(void) fprintf(stderr,"malloc failed\n");
-       			exit(-1);
-    		}
-			(void )fprintf(stderr,"the file path is %s.\n",meter->file_path);
-			(void )fprintf(stderr,"the tmp file path is %s.\n",meter->file_tmp_path);
-			(void )fprintf(stderr,"the file path is %s.\n",meter->file_path_xml);
-			(void )fprintf(stderr,"the tmp file path is %s.\n",meter->file_tmp_path_xml);
-			(void )fprintf(stderr,"the file path is %s.\n",meter->file_path_csv);
-			(void )fprintf(stderr,"the tmp file path is %s.\n",meter->file_tmp_path_csv);
-		}
-		(void )fprintf(stderr,"opening file %s.\n",meter->file_tmp_path);
-		(void )fprintf(stderr,"opening file %s.\n",meter->file_tmp_path_xml);
-		(void )fprintf(stderr,"opening file %s.\n",meter->file_tmp_path_csv);
-
-		meter->file = fopen(meter->file_tmp_path,"a");			
-		if(meter->file == NULL)
-			perror("fopen failed:");
-		meter->file_xml = fopen(meter->file_path_xml,"a");			
-		if(meter->file == NULL)
-			perror("fopen failed:");
-		meter->file_csv = fopen(meter->file_path_csv,"a");			
-		if(meter->file_csv == NULL)
-			perror("fopen failed:");
-
-		if(counter == 1){
-			fprintf(meter->file_xml,"<?xml_version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>\n<XML>\n"  "<action type=\"update\">\n");
-			fprintf(meter->file_csv,"###ACTION:UPDATE ENTITY:MeterData SCHEMA:Default VERSION:1.0.0\n");
-		}
-
-
-//**********************************************************************************************//
     	uint8_t *tab_rp_bits;
     	uint16_t *tab_rp_registers;
     	uint16_t *tab_rp_registers_bad;
@@ -883,25 +828,22 @@ void timer_thread_sample(union sigval v)
     	int use_backend;
     	uint16_t tmp_value;
     	float float_value;
-		char interval_string[16];
+	char interval_string[16];
 
-		/* gateway RS485 port config
-		   Portname: /dev/ttyUSB0
-		   Baudrate: 19200
-		   Even/Odd: None
-		   Databits: 8
-		   Stopbits: 1
-		*/
+	/* gateway RS485 port config
+	Portname: /dev/ttyUSB0
+	Baudrate: 19200
+	Even/Odd: None
+	Databits: 8
+	Stopbits: 1
+	*/
     	ctx = modbus_new_rtu("/dev/ttyUSB0", 19200, 'N', 8, 1);
-    	//ctx = modbus_new_rtu("/dev/ttyS0", 19200, 'N', 8, 1);
     	if (ctx == NULL) {
-       	 	fprintf(stderr, "Unable to allocate libmodbus context\n");
-        	exit -1;
+	    fprintf(stderr, "Unable to allocate libmodbus context\n");
+	    exit -1;
     	}
     	modbus_set_debug(ctx, TRUE);
-    	modbus_set_error_recovery(ctx,
-                              	MODBUS_ERROR_RECOVERY_LINK |
-                              	MODBUS_ERROR_RECOVERY_PROTOCOL);
+    	modbus_set_error_recovery(ctx,MODBUS_ERROR_RECOVERY_LINK | MODBUS_ERROR_RECOVERY_PROTOCOL);
     	modbus_set_slave(ctx, meter->modbus_id);
 
     	if (modbus_connect(ctx) == -1) {
@@ -916,59 +858,50 @@ void timer_thread_sample(union sigval v)
     	tab_rp_registers = (uint16_t *) malloc(nb_points * sizeof(uint16_t));
     	memset(tab_rp_registers, 0, nb_points * sizeof(uint16_t));
 
-		Meter_Attribute *attribute = meter->attribute;
-		printf("num_attribute is %d.\n",meter->num_attribute);
-		for(i = 0; i < meter->num_attribute && attribute; i++,attribute++){
+	Meter_Attribute *attribute = meter->attribute;
+	printf("num_attribute is %d.\n",meter->num_attribute);
+	for(i = 0; i < meter->num_attribute && attribute; i++,attribute++){
 
-    		/* Single register */
-			printf("reading register.\n");
-    		rc = modbus_read_registers(ctx, attribute->addr,
-                               attribute->reg_num, tab_rp_registers);
-    		if (rc == attribute->reg_num) {
+    	    /* Single register */
+	    printf("reading register.\n");
+	    rc = modbus_read_registers(ctx,attribute->addr,attribute->reg_num,tab_rp_registers);
+    	    if (rc == attribute->reg_num) 
+	    {
+	        //xml
+		fprintf(meter->file_xml,"    <MeterData schema=\"Default\" version=\"1.0.0\">\n      <AcquistionDateTime>%4d-%02d-%02dT%02d:%02d:%02d.0000000Z</AcquisitionDateTime>\n      <Value>%f</Value>\n      <MeterLocalId>%s%d_%s_%s_%d</MeterLocalId>\n    </MeterData>\n",(info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,info->tm_sec,modbus_get_float_cdab(tab_rp_registers),"sbs",meter->modbus_id,meter->commodity,attribute->value_unit,attribute->scale);
+		fflush(meter->file_xml);
+		//csv
+		fprintf(meter->file_csv,"%4d-%02d-%02dT%02d:%02d:%02d.0000000Z,%f,%s%d_%s_%s_%d\n",(info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,info->tm_sec,modbus_get_float_cdab(tab_rp_registers),"sbs",meter->modbus_id,meter->commodity,attribute->value_unit,attribute->scale);
+		fflush(meter->file_csv);
 
-				fprintf(meter->file_xml,"    <MeterData schema=\"Default\" version=\"1.0.0\">\n      <AcquistionDateTime>%4d-%02d-%02dT%02d:%02d:%02d.0000000Z</AcquisitionDateTime>\n      <Value>%f</Value>\n      <MeterLocalId>%s%d_%s_%s_%d</MeterLocalId>\n    </MeterData>\n",(info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,info->tm_sec,modbus_get_float_cdab(tab_rp_registers),"sbs",meter->modbus_id,meter->commodity,attribute->value_unit,attribute->scale);
-				fflush(meter->file_xml);
-
-				fprintf(stderr,"#####cwt float value is %f\n",modbus_get_float_cdab(tab_rp_registers));
-				fprintf(stderr,"%4d-%02d-%02dT%02d:%02d:%02d.0000000Z,%f,%s%d_%s_%s_%d\n",(info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,info->tm_sec,modbus_get_float_cdab(tab_rp_registers),"sbs",meter->modbus_id,meter->commodity,attribute->value_unit,attribute->scale);
-		
-
-				fprintf(meter->file_csv,"%4d-%02d-%02dT%02d:%02d:%02d.0000000Z,%f,%s%d_%s_%s_%d\n",(info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,info->tm_sec,modbus_get_float_cdab(tab_rp_registers),"sbs",meter->modbus_id,meter->commodity,attribute->value_unit,attribute->scale);
-				fflush(meter->file_csv);
-
-				second_trans(get_sample_interval(),interval_string);
-				if(counter == 1){
-
-					fprintf(meter->file,"%s%s%s,%s,%s,%s,%d,%s,%d,%4d%02d%02d%02d%02d,,%f#","MEPMD01,19970819,Schneider Electric,,,","SECN\\Schneider Electric China|SBMV\\Beijing Middle Voltage Plant","201308010358,SBMV.MCSET.FHU_HVAC_Lighting1|129","OK",meter->commodity,attribute->value_unit,attribute->scale,interval_string,get_upload_interval() / get_sample_interval(),(info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,modbus_get_float_cdab(tab_rp_registers));
-
-				}
-				else{	
-
-						if( i == meter->num_attribute -1){	
-							fprintf(meter->file,",,,%f",modbus_get_float_cdab(tab_rp_registers));
-						}
-						else{
-							fprintf(meter->file,",,,%f#",modbus_get_float_cdab(tab_rp_registers));
-						}
-				fflush(meter->file);
-				}
-			}
-		
-
-			else
-        			printf("FAILED (nb points %d)\n", rc);
-
+		second_trans(interval.sample_interval,interval_string);
+		if(counter == 1){
+		    fprintf(meter->file,"%s%s%s,%s,%s,%s,%d,%s,%d,%4d%02d%02d%02d%02d,,%f#","MEPMD01,19970819,Schneider Electric,,,","SECN\\Schneider Electric China|SBMV\\Beijing Middle Voltage Plant","201308010358,SBMV.MCSET.FHU_HVAC_Lighting1|129","OK",meter->commodity,attribute->value_unit,attribute->scale,interval_string,get_upload_interval() / get_sample_interval(),(info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,modbus_get_float_cdab(tab_rp_registers));
 		}
-		fprintf(meter->file,"\n");
+		else{	
+		    if( i == meter->num_attribute -1){	
+			fprintf(meter->file,",,,%f",modbus_get_float_cdab(tab_rp_registers));
+		    }
+		    else{
+			fprintf(meter->file,",,,%f#",modbus_get_float_cdab(tab_rp_registers));
+		    }
+		    fflush(meter->file);
+		}
+	    }
+	    else
+		printf("FAILED (nb points %d)\n", rc);
 
-		if(counter == get_upload_interval() / get_sample_interval())
-			fprintf(meter->file_xml,"  </action>\n</XML>\n");
-		(void )fprintf(stderr,"closing file %s.\n",meter->file_tmp_path);
-		(void )fprintf(stderr,"closing file %s.\n",meter->file_tmp_path_xml);
-		(void )fprintf(stderr,"closing file %s.\n",meter->file_tmp_path_csv);
-		fclose(meter->file);
-		fclose(meter->file_xml);
-		fclose(meter->file_csv);
+	}
+	fprintf(meter->file,"\n");
+
+	if(counter == get_upload_interval() / get_sample_interval())
+	    fprintf(meter->file_xml,"  </action>\n</XML>\n");
+	    (void )fprintf(stderr,"closing file %s.\n",meter->file_tmp_path);
+	    (void )fprintf(stderr,"closing file %s.\n",meter->file_tmp_path_xml);
+	    (void )fprintf(stderr,"closing file %s.\n",meter->file_tmp_path_csv);
+	    fclose(meter->file);
+	    fclose(meter->file_xml);
+	    fclose(meter->file_csv);
 
 close:
     	/* Free the memory */
@@ -985,41 +918,33 @@ close:
 //******************************end of sampling data******************//
 
 
-		printf("counter is %d.\n",counter);
-		if(counter ==  get_upload_interval() / get_sample_interval() )
-		{
-			char system_arguments[128];
+	printf("counter is %d.\n",counter);
+	//upload is true
+	if(upload)
+	{
+	    char system_arguments[128];
 
-			//sprintf(system_arguments,"awk '{for(i=1;i<=NF;i++){a[FNR,i]=$i}}END{for(i=1;i<=NF;i++){for(j=1;j<=FNR;j++){printf a[j,i]\" \"}print \"\"}}' %s | sed s/[[:space:]]//g > %s_new",meter->file_path,meter->file_path);
-			sprintf(system_arguments,"awk 'BEGIN{FS=\"#\"}{for(i=1;i<=NF;i++){a[FNR,i]=$i}}END{for(i=1;i<=NF;i++){for(j=1;j<=FNR;j++){printf a[j,i]\"#\"}print \"\"}}' %s | sed s/#//g > %s",meter->file_tmp_path,meter->file_path);
-			if( system(system_arguments) != 0) 
-				(void )fprintf(stderr,"system call error.\n"); 
+	    //sprintf(system_arguments,"awk '{for(i=1;i<=NF;i++){a[FNR,i]=$i}}END{for(i=1;i<=NF;i++){for(j=1;j<=FNR;j++){printf a[j,i]\" \"}print \"\"}}' %s | sed s/[[:space:]]//g > %s_new",meter->file_path,meter->file_path);
+	    sprintf(system_arguments,"awk 'BEGIN{FS=\"#\"}{for(i=1;i<=NF;i++){a[FNR,i]=$i}}END{for(i=1;i<=NF;i++){for(j=1;j<=FNR;j++){printf a[j,i]\"#\"}print \"\"}}' %s | sed s/#//g > %s",meter->file_tmp_path,meter->file_path);
+	    if( system(system_arguments) != 0) 
+		(void )fprintf(stderr,"system call error.\n"); 
 
-		}
 	}
-		if(counter ==  get_upload_interval() / get_sample_interval() )
-		{
-		  	printf("######upload time######.\n");
-			counter = 0;
-    		for (l=head; l; l=l->next)
-    		{
-				meter = (Meter*) l->data;
-				upload_file(meter->file_path,meter->file_name);
-				upload_file(meter->file_path_xml,meter->file_name_xml);
-				upload_file(meter->file_path_csv,meter->file_name_csv);
-			}
-		}
+    }
+    if(counter ==  get_upload_interval() / get_sample_interval() )
+    {
+	 printf("######upload time######.\n");
+	 counter = 0;
+	 for (l=head; l; l=l->next)
+	 {
+	    meter = (Meter*) l->data;
+	    upload_file(meter->file_path,meter->file_name);
+	    upload_file(meter->file_path_xml,meter->file_name_xml);
+	    upload_file(meter->file_path_csv,meter->file_name_csv);
+	 }
+    }
 }
-void timer_thread_upload(union sigval v)
-{
-    	time_t rawtime;
-    	struct tm *info;
-	printf("######upload timer expired######.\n");
-    	time(&rawtime);
-    	/* Get GMT time */
-    	info = gmtime(&rawtime );
-    	printf("UTC: %2d:%02d:%02d\n", info->tm_hour, info->tm_min,info->tm_sec);
-}
+
 int main()
 {
 	
