@@ -15,6 +15,7 @@
 
 #include "unit-test.h"
 #include <curl/curl.h>
+#include <uci.h>
 
 #define	    METER_FILE_LOCATION	"/meters/"
 #define	    UPLOAD_FILE_AS	"while-uploading.txt"
@@ -39,8 +40,8 @@
 #define	    UCI_GATEWAY_TYPE		"gateway.general.gw_type"
 #define	    UCI_FILE_PREFIX		"gateway.general.file_prefix"
 #define	    UCI_V2_TYPE			"gateway.general.v2_type"
-#define	    UCI_UPLOAD_INTERVAL		"ftp.general.upload_interval"
-#define	    CUSTOM_UCI_SAMPLE_INTERVAL	"ftp.general.custom_upload_interval"
+#define	    UCI_UPLOAD_INTERVAL		"ftp.general.ftp_upload_interval"
+#define	    CUSTOM_UCI_UPLOAD_INTERVAL	"ftp.general.ftp_custom_upload_interval"
 #define	    UCI_FTP_ADDR		"ftp.general.ftp_addr"
 #define	    UCI_FTP_PORT		"ftp.general.ftp_port"
 #define	    UCI_FTP_USER_NAME		"ftp.general.ftp_user_name"
@@ -110,7 +111,7 @@ static void freeData(void **data)
     {
 	(void) fprintf(stderr,"Freeing Meter Attributes First.\n");
     int i;
-	for(i = 0; i< (*addr)->num_attribute; i++){
+	for(i = 0; i< (*addr)->attr_num; i++){
 		if( (*addr)->attribute)
 		{
 			(void)fprintf(stderr,"Freeing value_type and value unit.\n");
@@ -242,11 +243,14 @@ int load_meter_config()
     const char *value;
 
 
+    printf("############meter_config#############.\n");
     ctx = uci_alloc_context(); 
     if (UCI_OK != uci_load(ctx, METER_UCI_CONFIG_FILE, &pkg)){
 	ret = -1;
+	printf("meter_config error.\n");
         goto cleanup; 
     }
+    printf("############meter_config#############11111.\n");
 
 
     uci_foreach_element(&pkg->sections, e)
@@ -338,7 +342,7 @@ int load_meter_config()
             		printf(" commodity is %s.\n",meter->commodity);
         	}
 
-		addr->current_attr = addr->attribute;
+		meter->current_attr = meter->attribute;
 	}
 
     }
@@ -356,19 +360,20 @@ void meter_init(void)
 }
 enum output_format
 {
-    cmep = 0;
-    xml;
-    csv;
+    cmep,
+    xml,
+    csv
 };
-output_format meter_opfm;
+enum output_format meter_opfm;
 char output_file_prefix[8] = {0};
 
 int meter_output_prefix(void){
     struct uci_ptr p;
     int value;
+    char file_prefix[] = UCI_FILE_PREFIX;
 
     ctx = uci_alloc_context();
-    if (uci_lookup_ptr (ctx, &p, UCI_FILE_PREFIX, true) != UCI_OK)
+    if (uci_lookup_ptr (ctx, &p, file_prefix, true) != UCI_OK)
     {
 	uci_perror (ctx, "XXX");
 	return -1;
@@ -384,9 +389,11 @@ int meter_output_prefix(void){
 int meter_output_format(void){
     struct uci_ptr p;
     int value;
+    char gateway_type[] = UCI_GATEWAY_TYPE;
+    char v2_type[] = UCI_V2_TYPE;
 
     ctx = uci_alloc_context();
-    if (uci_lookup_ptr (ctx, &p, UCI_GATEWAY_TYPE, true) != UCI_OK)
+    if (uci_lookup_ptr (ctx, &p, gateway_type, true) != UCI_OK)
     {
 	uci_perror (ctx, "XXX");
 	return -1;
@@ -400,7 +407,7 @@ int meter_output_format(void){
     }
     else{
 
-	if (uci_lookup_ptr (ctx, &p, UCI_V2_TYPE, true) != UCI_OK)
+	if (uci_lookup_ptr (ctx, &p, v2_type, true) != UCI_OK)
 	{
 	    uci_perror (ctx, "XXX");
 	    uci_free_context (ctx);
@@ -500,7 +507,7 @@ int ftp_init(void)
 	goto cleanup;
     }
     printf("%s\n", p.o->v.string);
-    ftp_config->ftp_SSL = strdup(p.o->v.string);
+    ftp_config->ftp_ssl = strdup(p.o->v.string);
 
 cleanup:
     uci_free_context(ctx);
@@ -523,6 +530,9 @@ int get_interval(char *interval_name, char *custom_interval_name)
 {
     struct uci_ptr p;
     int value;
+
+    printf("interval_name is %s.\n",interval_name);
+    printf("custom_interval_name is %s.\n",custom_interval_name);
 
     ctx = uci_alloc_context();
     if (uci_lookup_ptr (ctx, &p, interval_name, true) != UCI_OK)
@@ -553,12 +563,16 @@ int get_interval(char *interval_name, char *custom_interval_name)
 
 int get_sample_interval()
 {
-    return get_interval(UCI_SAMPLE_INTERVAL,CUSTOM_UCI_SAMPLE_INTERVAL);
+    char sample_interval[] = UCI_SAMPLE_INTERVAL;
+    char custom_sample_interval[] = CUSTOM_UCI_SAMPLE_INTERVAL;
+    return get_interval(sample_interval,custom_sample_interval);
 }
 
 int get_upload_interval()
 {
-    return get_interval(UCI_UPLOAD_INTERVAL,CUSTOM_UCI_UPLOAD_INTERVAL);
+    char upload_interval[] = UCI_UPLOAD_INTERVAL;
+    char custom_upload_interval[] = CUSTOM_UCI_UPLOAD_INTERVAL;
+    return get_interval(upload_interval,custom_upload_interval);
 }
 
 void interval_init(Interval *interval)
@@ -734,22 +748,26 @@ void timer_thread_sample(union sigval v)
     static int counter = 0;
     counter++;
 
-    if(counter == Interval.upload_interval / Interval.sample_interval)
+    if(counter == interval.upload_interval / interval.sample_interval)
 	upload = true;
 
     char time_utc[16] = {0};
     char time_local[16] = {0};
     char time_local_file[24] = {0};
+    char time_utc_xml[48] = {0};
+    char time_utc_csv[48] = {0};
     time_t rawtime;
     struct tm *info, *info_local;
     time(&rawtime);
     /* Get GMT time */
     info = gmtime(&rawtime );
-    sprintf(time_utc,"4d02d02d02d02d02d",(1900 + info->tm_year),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min);
+    sprintf(time_utc,"%4d%02d%02d%02d%02d",(1900 + info->tm_year),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min);
+    sprintf(time_utc_xml,"%4d-%02d-%02dT%02d:%02d:%02d.0000000Z",(1900 + info->tm_year),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,info->tm_sec);
+    sprintf(time_utc_csv,"%4d-%02d-%02dT%02d:%02d:%02d.00Z",(1900 + info->tm_year),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,info->tm_sec);
     /* Get LOCAL time */
     info_local = localtime(&rawtime);
-    sprintf(time_local,"4d02d02d02d02d02d",(1900 + info_local->tm_year),(info_local->tm_mon + 1),info_local->tm_mday,info_local->tm_hour,info_local->tm_min);
-    sprintf(time_local_file,"4d02d02d02d02d02d02d",(1900 + info_local->tm_year),(info_local->tm_mon + 1),info_local->tm_mday,info_local->tm_hour,info_local->tm_min,info_local->tm_sec);
+    sprintf(time_local,"%4d%02d%02d%02d%02d",(1900 + info_local->tm_year),(info_local->tm_mon + 1),info_local->tm_mday,info_local->tm_hour,info_local->tm_min);
+    sprintf(time_local_file,"%4d%02d%02d%02d%02d%02d%02d",(1900 + info_local->tm_year),(info_local->tm_mon + 1),info_local->tm_mday,info_local->tm_hour,info_local->tm_min,info_local->tm_sec);
 
     (void) fprintf(stderr,
 "=========================================================================\n");
@@ -786,13 +804,13 @@ void timer_thread_sample(union sigval v)
 	    }
 	    sprintf(file_name,"%s_%s_001.%s",output_file_prefix,time_local_file,postfix);
 	    sprintf(file_path,"%s%s",METER_FILE_LOCATION,file_name);
-	    sprintf(file_path,"%s%s_tmp",METER_FILE_LOCATION,file_name);
+	    sprintf(file_tmp_path,"%s%s_tmp",METER_FILE_LOCATION,file_name);
 	    meter->file_path = strdup(file_path);
 	    meter->file_tmp_path = strdup(file_tmp_path);
 	    meter->file_name = strdup(file_name);
 
 
-	    if (meter->file_path == NULL || meter->file_tmp_path == NULL || meter->file_name) 
+	    if (meter->file_path == NULL || meter->file_tmp_path == NULL || meter->file_name == NULL) 
 	    {
 		(void) fprintf(stderr,"malloc failed\n");
        		exit(-1);
@@ -807,10 +825,12 @@ void timer_thread_sample(union sigval v)
 	if(meter->file == NULL)
 	    perror("fopen failed:");
 
-	//if(counter == 1){
-	//	fprintf(meter->file_xml,"<?xml_version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>\n<XML>\n"  "<action type=\"update\">\n");
-	//		fprintf(meter->file_csv,"###ACTION:UPDATE ENTITY:MeterData SCHEMA:Default VERSION:1.0.0\n");
-	//}
+	if(counter == 1 && meter_opfm == xml){
+	    fprintf(meter->file,"<?xml_version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>\n<XML>\n"  "<action type=\"update\">\n");
+	}
+	if(counter == 1 && meter_opfm == csv){
+	    fprintf(meter->file,"###ACTION:UPDATE ENTITY:MeterData SCHEMA:Default VERSION:1.0.0\n");
+	}
 
 
     	uint8_t *tab_rp_bits;
@@ -859,33 +879,40 @@ void timer_thread_sample(union sigval v)
     	memset(tab_rp_registers, 0, nb_points * sizeof(uint16_t));
 
 	Meter_Attribute *attribute = meter->attribute;
-	printf("num_attribute is %d.\n",meter->num_attribute);
-	for(i = 0; i < meter->num_attribute && attribute; i++,attribute++){
+	printf("attr_num is %d.\n",meter->attr_num);
+	for(i = 0; i < meter->attr_num && attribute; i++,attribute++){
 
     	    /* Single register */
 	    printf("reading register.\n");
+	    printf("addr is %d.\n",attribute->addr);
 	    rc = modbus_read_registers(ctx,attribute->addr,attribute->reg_num,tab_rp_registers);
     	    if (rc == attribute->reg_num) 
 	    {
+		
 	        //xml
-		fprintf(meter->file_xml,"    <MeterData schema=\"Default\" version=\"1.0.0\">\n      <AcquistionDateTime>%4d-%02d-%02dT%02d:%02d:%02d.0000000Z</AcquisitionDateTime>\n      <Value>%f</Value>\n      <MeterLocalId>%s%d_%s_%s_%d</MeterLocalId>\n    </MeterData>\n",(info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,info->tm_sec,modbus_get_float_cdab(tab_rp_registers),"sbs",meter->modbus_id,meter->commodity,attribute->value_unit,attribute->scale);
-		fflush(meter->file_xml);
-		//csv
-		fprintf(meter->file_csv,"%4d-%02d-%02dT%02d:%02d:%02d.0000000Z,%f,%s%d_%s_%s_%d\n",(info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,info->tm_sec,modbus_get_float_cdab(tab_rp_registers),"sbs",meter->modbus_id,meter->commodity,attribute->value_unit,attribute->scale);
-		fflush(meter->file_csv);
-
-		second_trans(interval.sample_interval,interval_string);
-		if(counter == 1){
-		    fprintf(meter->file,"%s%s%s,%s,%s,%s,%d,%s,%d,%4d%02d%02d%02d%02d,,%f#","MEPMD01,19970819,Schneider Electric,,,","SECN\\Schneider Electric China|SBMV\\Beijing Middle Voltage Plant","201308010358,SBMV.MCSET.FHU_HVAC_Lighting1|129","OK",meter->commodity,attribute->value_unit,attribute->scale,interval_string,get_upload_interval() / get_sample_interval(),(info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour,info->tm_min,modbus_get_float_cdab(tab_rp_registers));
-		}
-		else{	
-		    if( i == meter->num_attribute -1){	
-			fprintf(meter->file,",,,%f",modbus_get_float_cdab(tab_rp_registers));
-		    }
-		    else{
-			fprintf(meter->file,",,,%f#",modbus_get_float_cdab(tab_rp_registers));
-		    }
+		if(meter_opfm == xml){
+		    fprintf(meter->file,"    <MeterData schema=\"Default\" version=\"1.0.0\">\n      <AcquistionDateTime>%s</AcquisitionDateTime>\n      <Value>%f</Value>\n      <MeterLocalId>%s</MeterLocalId>\n    </MeterData>\n",time_utc_xml,modbus_get_float_cdab(tab_rp_registers),attribute->tag_id);
 		    fflush(meter->file);
+		}
+		else if(meter_opfm == csv){
+		    //csv
+		    fprintf(meter->file,"%s,%f,%s",time_utc_csv,modbus_get_float_cdab(tab_rp_registers),attribute->tag_id);
+		    fflush(meter->file);
+		}
+		else{
+		    second_trans(interval.sample_interval,interval_string);
+		    if(counter == 1){
+			fprintf(meter->file,"%s,%s,,%s,\"%s\\%s|%s\\%s\",%s,%s,%s,%s,%s,%d,%s,%d,%s,,%f#","MEPMD01,19970819",meter->sender_id,meter->receiver_id,meter->customer_id,meter->customer_name,meter->account_id,meter->account_name,time_local,meter->meter_id,"OK",meter->commodity,attribute->value_unit,attribute->constant,interval_string,get_upload_interval() / get_sample_interval(),time_utc,modbus_get_float_cdab(tab_rp_registers));
+		    }
+		    else{	
+			if( i == meter->attr_num -1){	
+			    fprintf(meter->file,",,,%f",modbus_get_float_cdab(tab_rp_registers));
+			}
+			else{
+			    fprintf(meter->file,",,,%f#",modbus_get_float_cdab(tab_rp_registers));
+			}
+			fflush(meter->file);
+		    }
 		}
 	    }
 	    else
@@ -894,14 +921,13 @@ void timer_thread_sample(union sigval v)
 	}
 	fprintf(meter->file,"\n");
 
-	if(counter == get_upload_interval() / get_sample_interval())
-	    fprintf(meter->file_xml,"  </action>\n</XML>\n");
-	    (void )fprintf(stderr,"closing file %s.\n",meter->file_tmp_path);
-	    (void )fprintf(stderr,"closing file %s.\n",meter->file_tmp_path_xml);
-	    (void )fprintf(stderr,"closing file %s.\n",meter->file_tmp_path_csv);
-	    fclose(meter->file);
-	    fclose(meter->file_xml);
-	    fclose(meter->file_csv);
+	if(upload)
+	{
+	    if(meter_opfm == xml)
+		fprintf(meter->file,"  </action>\n</XML>\n");
+	}
+	(void )fprintf(stderr,"closing file %s.\n",meter->file_tmp_path);
+	fclose(meter->file);
 
 close:
     	/* Free the memory */
@@ -931,7 +957,7 @@ close:
 
 	}
     }
-    if(counter ==  get_upload_interval() / get_sample_interval() )
+    if(upload)
     {
 	 printf("######upload time######.\n");
 	 counter = 0;
@@ -939,19 +965,20 @@ close:
 	 {
 	    meter = (Meter*) l->data;
 	    upload_file(meter->file_path,meter->file_name);
-	    upload_file(meter->file_path_xml,meter->file_name_xml);
-	    upload_file(meter->file_path_csv,meter->file_name_csv);
 	 }
     }
 }
 
 int main()
 {
+
+    printf("first line.\n");
 	
     char interval_string[16];
-    second_trans(get_sample_interval(),interval_string);
+    printf("calling second_trans.\n");
+    printf("sample interval is %d.\n",get_sample_interval());
+    second_trans(get_sample_interval() * 60,interval_string);
     (void) fprintf(stderr,"sample interval string is %s\n",interval_string);
-
     Sll *l;
     Meter *addr;
 
@@ -966,17 +993,17 @@ int main()
 
     	Meter_Attribute *attribute = addr->attribute;
     	int i;
-    	for(i = 0; i < addr->num_attribute && attribute; i++,attribute++){
+    	for(i = 0; i < addr->attr_num && attribute; i++,attribute++){
 	   (void) fprintf(stderr,"  %d\n",attribute->addr);
 	   (void) fprintf(stderr,"  %d\n",attribute->reg_num);
-	   (void) fprintf(stderr,"  %d\n",attribute->scale);
+	   (void) fprintf(stderr,"  %d\n",attribute->constant);
 	   (void) fprintf(stderr,"  %s\n",attribute->value_type);
 	   (void) fprintf(stderr,"  %s\n",attribute->value_unit);
 	   (void) fprintf(stderr,"\n");
    	 }
     }
-
     meter_output_format();
+    meter_output_prefix();
 
     interval_init(&interval);
 
@@ -1015,7 +1042,6 @@ int main()
 	perror("fail to sample timer_settime");
 	exit(-1);
     }
-	
     pause();
 	
     return 0;
