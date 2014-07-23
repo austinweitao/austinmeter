@@ -16,7 +16,9 @@
 #include "unit-test.h"
 #include <curl/curl.h>
 #include <uci.h>
-
+#define	    xml_header		"<?xml_version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>\n<XML>\n  <action type=\"update\">"
+#define	    xml_ender		"  </action>\n</XML>"
+#define	    csv_header		"###ACTION:UPDATE ENTITY:MeterData SCHEMA:Default VERSION:1.0.0"
 #define	    METER_FILE_LOCATION	"/meters/"
 #define	    UPLOAD_FILE_AS	"while-uploading.txt"
 #define	    REMOTE_URL		"ftp://cwt:110weitao660@192.168.5.51:990/"  UPLOAD_FILE_AS
@@ -56,7 +58,7 @@ typedef struct{
     char* value_type;	//typde of the value: float,int,long{0,1,2}	
     char* value_unit;  //type of the value unit: KWh,KVarh,Volt
     char* total_diff;
-    char* tag_id;
+    char* tagid;
 }Meter_Attribute;
 
 typedef struct{
@@ -212,10 +214,10 @@ int load_attr_config()
             		meter->current_attr->total_diff = strdup(value); 
             		printf(" total_diff is %s.\n",meter->current_attr->value_unit);
         	}
-        	if (NULL != (value = uci_lookup_option_string(ctx, s, "tag_id")))
+        	if (NULL != (value = uci_lookup_option_string(ctx, s, "tagid")))
         	{
-            		meter->current_attr->tag_id = strdup(value); 
-            		printf(" tag_id is %s.\n",meter->current_attr->tag_id);
+            		meter->current_attr->tagid = strdup(value); 
+            		printf(" tagid is %s.\n",meter->current_attr->tagid);
         	}
 					
 		meter->current_attr++;
@@ -601,7 +603,8 @@ void second_trans(int seconds,char *time)
 // initialize interval timer according to user defined sample and upload interval
 void itimer_init(struct tm *info, struct itimerspec *it_spec,int it_interval)
 {
-    int secs_interval = it_interval * SECSPERMIN;
+    //int secs_interval = it_interval * SECSPERMIN;
+    int secs_interval = it_interval;
     int secs_left = 0;	
     //sample interval less than 1 hour, unit in seconds
     if(secs_interval < SECSPERHOUR){
@@ -697,7 +700,7 @@ static void upload_file(char *file_to_upload, char *rename_to)
 	curl_easy_setopt (curl, CURLOPT_SSL_VERIFYHOST, 0L); 
 				
 	/* we want to use our own read function */
-	curl_easy_setopt(curl, CURLOPT_READFUNCTION, read_callback);
+	//curl_easy_setopt(curl, CURLOPT_READFUNCTION, read_callback);
 	
 	/* enable uploading */
 	curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
@@ -767,7 +770,7 @@ void timer_thread_sample(union sigval v)
     /* Get LOCAL time */
     info_local = localtime(&rawtime);
     sprintf(time_local,"%4d%02d%02d%02d%02d",(1900 + info_local->tm_year),(info_local->tm_mon + 1),info_local->tm_mday,info_local->tm_hour,info_local->tm_min);
-    sprintf(time_local_file,"%4d%02d%02d%02d%02d%02d%02d",(1900 + info_local->tm_year),(info_local->tm_mon + 1),info_local->tm_mday,info_local->tm_hour,info_local->tm_min,info_local->tm_sec);
+    sprintf(time_local_file,"%4d%02d%02d%02d%02d%02d",(1900 + info_local->tm_year),(info_local->tm_mon + 1),info_local->tm_mday,info_local->tm_hour,info_local->tm_min,info_local->tm_sec);
 
     (void) fprintf(stderr,
 "=========================================================================\n");
@@ -783,9 +786,9 @@ void timer_thread_sample(union sigval v)
     Meter *meter;
 
     int n=0;
-    char file_path[64];
-    char file_tmp_path[64];
-    char file_name[64];
+    static char file_path[64];
+    static char file_tmp_path[64];
+    static char file_name[64];
 
     //head: the global meter linked list head
     for (l=head; l; l=l->next)
@@ -804,7 +807,7 @@ void timer_thread_sample(union sigval v)
 	    }
 	    sprintf(file_name,"%s_%s_001.%s",output_file_prefix,time_local_file,postfix);
 	    sprintf(file_path,"%s%s",METER_FILE_LOCATION,file_name);
-	    sprintf(file_tmp_path,"%s%s_tmp",METER_FILE_LOCATION,file_name);
+	    sprintf(file_tmp_path,"%s_%s_tmp",file_path,meter->meter_id);
 	    meter->file_path = strdup(file_path);
 	    meter->file_tmp_path = strdup(file_tmp_path);
 	    meter->file_name = strdup(file_name);
@@ -825,12 +828,15 @@ void timer_thread_sample(union sigval v)
 	if(meter->file == NULL)
 	    perror("fopen failed:");
 
+
+	/*
 	if(counter == 1 && meter_opfm == xml){
 	    fprintf(meter->file,"<?xml_version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>\n<XML>\n"  "<action type=\"update\">\n");
 	}
 	if(counter == 1 && meter_opfm == csv){
 	    fprintf(meter->file,"###ACTION:UPDATE ENTITY:MeterData SCHEMA:Default VERSION:1.0.0\n");
 	}
+	*/
 
 
     	uint8_t *tab_rp_bits;
@@ -891,12 +897,12 @@ void timer_thread_sample(union sigval v)
 		
 	        //xml
 		if(meter_opfm == xml){
-		    fprintf(meter->file,"    <MeterData schema=\"Default\" version=\"1.0.0\">\n      <AcquistionDateTime>%s</AcquisitionDateTime>\n      <Value>%f</Value>\n      <MeterLocalId>%s</MeterLocalId>\n    </MeterData>\n",time_utc_xml,modbus_get_float_cdab(tab_rp_registers),attribute->tag_id);
+		    fprintf(meter->file,"    <MeterData schema=\"Default\" version=\"1.0.0\">\n      <AcquistionDateTime>%s</AcquisitionDateTime>\n      <Value>%f</Value>\n      <MeterLocalId>%s</MeterLocalId>\n    </MeterData>\n",time_utc_xml,modbus_get_float_cdab(tab_rp_registers),attribute->tagid);
 		    fflush(meter->file);
 		}
 		else if(meter_opfm == csv){
 		    //csv
-		    fprintf(meter->file,"%s,%f,%s",time_utc_csv,modbus_get_float_cdab(tab_rp_registers),attribute->tag_id);
+		    fprintf(meter->file,"%s,%f,%s\n",time_utc_csv,modbus_get_float_cdab(tab_rp_registers),attribute->tagid);
 		    fflush(meter->file);
 		}
 		else{
@@ -919,13 +925,15 @@ void timer_thread_sample(union sigval v)
 		printf("FAILED (nb points %d)\n", rc);
 
 	}
-	fprintf(meter->file,"\n");
-
+	if(meter_opfm == cmep)
+	    fprintf(meter->file,"\n");
+	/*
 	if(upload)
 	{
 	    if(meter_opfm == xml)
 		fprintf(meter->file,"  </action>\n</XML>\n");
 	}
+	*/
 	(void )fprintf(stderr,"closing file %s.\n",meter->file_tmp_path);
 	fclose(meter->file);
 
@@ -946,12 +954,12 @@ close:
 
 	printf("counter is %d.\n",counter);
 	//upload is true
-	if(upload)
+	if(upload && meter_opfm == cmep)
 	{
 	    char system_arguments[128];
 
 	    //sprintf(system_arguments,"awk '{for(i=1;i<=NF;i++){a[FNR,i]=$i}}END{for(i=1;i<=NF;i++){for(j=1;j<=FNR;j++){printf a[j,i]\" \"}print \"\"}}' %s | sed s/[[:space:]]//g > %s_new",meter->file_path,meter->file_path);
-	    sprintf(system_arguments,"awk 'BEGIN{FS=\"#\"}{for(i=1;i<=NF;i++){a[FNR,i]=$i}}END{for(i=1;i<=NF;i++){for(j=1;j<=FNR;j++){printf a[j,i]\"#\"}print \"\"}}' %s | sed s/#//g > %s",meter->file_tmp_path,meter->file_path);
+	    sprintf(system_arguments,"awk 'BEGIN{FS=\"#\"}{for(i=1;i<=NF;i++){a[FNR,i]=$i}}END{for(i=1;i<=NF;i++){for(j=1;j<=FNR;j++){printf a[j,i]\"#\"}print \"\"}}' \"%s\" | sed s/#//g >> \"%s\"",meter->file_tmp_path,file_path);
 	    if( system(system_arguments) != 0) 
 		(void )fprintf(stderr,"system call error.\n"); 
 
@@ -959,6 +967,7 @@ close:
     }
     if(upload)
     {
+	 /*
 	 printf("######upload time######.\n");
 	 counter = 0;
 	 for (l=head; l; l=l->next)
@@ -966,6 +975,43 @@ close:
 	    meter = (Meter*) l->data;
 	    upload_file(meter->file_path,meter->file_name);
 	 }
+	 */
+	 printf("######upload time######.\n");
+	 counter = 0;
+	if(meter_opfm == xml){
+	    char args[128];
+	    sprintf(args,"echo \"%s\" > \"%s\"",xml_header,file_path);
+	    fprintf(stderr,"args is %s.\n",args);
+	    if(system(args) != 0) 
+		(void )fprintf(stderr,"system call error.\n"); 
+	 }
+	
+	if(meter_opfm == csv){
+	    char args[128];
+	    sprintf(args,"echo \"%s\" > \"%s\"",csv_header,file_path);
+	    fprintf(stderr,"args is %s.\n",args);
+	    if(system(args) != 0) 
+		(void )fprintf(stderr,"system call error.\n"); 
+	}
+	if(meter_opfm == xml || meter_opfm == csv){
+	    for (l=head; l; l=l->next)
+	    {
+		char args[64];
+		meter = (Meter*) l->data;
+		sprintf(args,"cat \"%s\" >> \"%s\"",meter->file_tmp_path,file_path);
+		fprintf(stderr,"args is %s.\n",args);
+		if(system(args) != 0) 
+		    (void )fprintf(stderr,"system call error.\n"); 
+	    }
+	}
+	if(meter_opfm == xml){
+	    char args[128];
+	    sprintf(args,"echo \"%s\" >> \"%s\"",xml_ender,file_path);
+	    fprintf(stderr,"args is %s.\n",args);
+	    if(system(args) != 0) 
+		(void )fprintf(stderr,"system call error.\n"); 
+	 }
+	 upload_file(file_path,file_name);
     }
 }
 
