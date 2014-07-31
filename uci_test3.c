@@ -40,7 +40,7 @@ static Sll *head = NULL;
 /*********************************************
 *   载入配置文件,并遍历Section.
 */
-static int uci_do_add(struct uci_context *ctx,struct uci_package *pkg,char *section_type,int modbus_id)
+static int uci_do_add(struct uci_context *ctx,struct uci_package *pkg,char *section_type,Meter *meter)
 {
 	struct uci_section *s = NULL;
 	int ret;
@@ -51,40 +51,47 @@ static int uci_do_add(struct uci_context *ctx,struct uci_package *pkg,char *sect
 	if (ret != UCI_OK){
 		fprintf(stderr,"add  section failed.\n");
 
-		goto done;
+		return ret;
 	}
-
-	if ( UCI_OK != (ret = uci_commit(ctx, &pkg, false))) {
-	    printf("uci commit failed.\n");
-	    ret = 1;
-	}
-
-done:
-	if (ret != UCI_OK)
-		fprintf(stderr,"ret is not ok.\n");
-	else if (s)
-		fprintf(stdout, "%s\n", s->e.name);
 
 	char ptr_str[64] = {0};
-	sprintf(ptr_str,"meter_lastvalue.%s.modbus_id=%d",s->e.name,modbus_id);
+	sprintf(ptr_str,"meter_lastvalue.%s.modbus_id=%d",s->e.name,meter->modbus_id);
 	printf("ptr_str is %s.\n",ptr_str);
 
-
-	if (uci_lookup_ptr(ctx, &ptr, ptr_str, true) != UCI_OK) {
-	    printf("lookup_ptr failed.\n");
+	if (uci_lookup_ptr(ctx, &ptr, ptr_str, true) != UCI_OK) { printf("lookup_ptr failed.\n");
 	    return 1;
 	}
-
-	printf("ptr.package is %s.\n",ptr.package);
-	printf("ptr.section is %s.\n",ptr.section);
-	printf("ptr.option is %s.\n",ptr.option);
-	printf("ptr.value is %s.\n",ptr.value);
     
 	ret = uci_set(ctx, &ptr);
-	if (uci_commit(ctx, &ptr.p, false) != UCI_OK) {
-	    printf("uci commit failed.\n");
-	    ret = 1;
+	if (ret != UCI_OK){
+		fprintf(stderr,"ret is not ok.\n");
+		return ret;
 	}
+
+	int i;
+	Meter_Attribute *attribute = meter->attribute;
+
+	for(i = 0; i < meter->attr_num; i++,attribute++)
+	{
+	    sprintf(ptr_str,"meter_lastvalue.%s.%s=%d",s->e.name,attribute->value_unit,777);
+	    printf("ptr_str is %s.\n",ptr_str);
+	    if ((ret = uci_lookup_ptr(ctx, &ptr, ptr_str, true)) != UCI_OK) { 
+		printf("lookup_ptr failed.\n");
+		return ret;
+	    }
+	    ret = uci_set(ctx, &ptr);
+	    if (ret != UCI_OK){
+		fprintf(stderr,"ret is not ok.\n");
+		return ret;
+	    }
+	
+	}
+	if ( UCI_OK != (ret = uci_commit(ctx, &pkg, false))) {
+	    printf("uci commit failed.\n");
+	    return ret;
+	}
+
+
 
 	return ret;
 }
@@ -126,9 +133,7 @@ bool load_meter_lastvalue_config()
 		printf("section s's type is meter_lastvalue\n");
 		if (NULL != (value = uci_lookup_option_string(ctx, s, "modbus_id"))) 
 		{
-		    printf("section's modbus_id is %s.\n",value);
 		    modbus_id = atoi(value);
-		    printf("section's modbus_id is %d.\n",modbus_id);
 		    if ( meter->modbus_id ==  modbus_id){
 			flag = 1; 
 			printf("found a section belonging to the meter.\n");
@@ -140,7 +145,7 @@ bool load_meter_lastvalue_config()
 	if(flag == 0)   //no seciton belongs to the current meter
 	{
 	    printf("currently no section belongs to the meter, create a new section.\n");
-	    if ( UCI_OK != uci_do_add(ctx,pkg,"meter_lastvalue",meter->modbus_id))
+	    if ( UCI_OK != uci_do_add(ctx,pkg,"meter_lastvalue",meter))
 		fprintf(stderr,"uci do add failed.\n");
 	}
     }
