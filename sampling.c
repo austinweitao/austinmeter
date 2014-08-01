@@ -16,6 +16,16 @@
 #include "unit-test.h"
 #include <curl/curl.h>
 #include <uci.h>
+#include "libsocket.h"
+
+enum MsgType
+{
+    MSG_SBS_FTP_TEST=0,
+    MSG_SBS_METER_STATUS,
+    MSG_SBS_REBOOT,
+    MSG_SBS_TEST,
+};
+
 #define	    xml_header		"<?xml_version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>\n<XML>\n  <action type=\"update\">"
 #define	    xml_ender		"  </action>\n</XML>"
 #define	    csv_header		"###ACTION:UPDATE ENTITY:MeterData SCHEMA:Default VERSION:1.0.0"
@@ -24,18 +34,16 @@
 #define	    REMOTE_URL		"ftp://cwt:110weitao660@192.168.5.51:990/"  UPLOAD_FILE_AS
 #define	    CLOCKID CLOCK_REALTIME
 
-//#define USER_UCI_SAMPLE_INTERVAL (85 * SECSPERMIN)
-//#define USER_UCI_UPLOAD_INTERVAL (30 * SECSPERMIN)
 #define	    USER_UCI_SAMPLE_INTERVAL	(10)
 #define	    USER_UCI_UPLOAD_INTERVAL	(80)
 #define	    SECSPERHOUR			 3600
 #define	    SECSPERMIN			60	
 #define	    INTERVAL_CMEP		"00000005"
 
-
-#define	    METER_UCI_CONFIG_FILE   "/etc/config/meter"
-#define	    GATEWAY_UCI_CONFIG_FILE "/etc/config/gateway"
-#define	    FTP_UCI_CONFIG_FILE	    "/etc/config/ftp"
+#define	    METER_UCI_CONFIG_FILE		"/etc/config/meter"
+#define	    GATEWAY_UCI_CONFIG_FILE		"/etc/config/gateway"
+#define	    FTP_UCI_CONFIG_FILE			"/etc/config/ftp"
+#define	    METER_LASTVALUE_UCI_CONFIG_FILE	"/etc/config/meter_lastvalue"
 
 #define	    UCI_SAMPLE_INTERVAL		"gateway.general.sample_interval"
 #define	    CUSTOM_UCI_SAMPLE_INTERVAL  "gateway.general.custom_sample_interval"
@@ -145,6 +153,218 @@ static void freeData(void **data)
 static struct uci_context * ctx = NULL; 
 Sll *head = NULL;
 
+
+static float uci_show_value(struct uci_option *o)
+{
+	struct uci_element *e;
+	bool sep = false;
+
+	switch(o->type) {
+	case UCI_TYPE_STRING:
+		printf("%s\n", o->v.string);
+		break;
+	default:
+		printf("<unknown>\n");
+		break;
+	}
+}
+static int uci_get_option(struct uci_context *ctx, char *string, float *value)
+{
+	printf("uci_get_option.\n");
+	int ret = UCI_OK;
+	struct uci_ptr ptr;
+	printf("string is %s.\n",string);
+
+	if ((ret = uci_lookup_ptr(ctx, &ptr,string, true)) != UCI_OK) 
+	{ 
+	    printf("lookup_ptr failed.\n");
+	    return ret;
+	}
+	printf("ptr's package is %s.\n",ptr.package);
+	printf("ptr's section is %s.\n",ptr.section);
+	printf("ptr's option is %s.\n",ptr.option);
+	*value = atof(ptr.o->v.string);
+	printf("value is %f.\n",*value);
+	return ret;
+}
+
+
+static int uci_set_option(struct uci_context *ctx, char *string)
+{
+	int ret = UCI_OK;
+	struct uci_ptr ptr;
+
+	printf("uci_set_option. in this funciton\n");
+	printf("string is %s.\n",string);
+
+	if ((ret = uci_lookup_ptr(ctx, &ptr,string, true)) != UCI_OK) 
+	{ 
+	    printf("lookup_ptr failed.\n");
+	    return ret;
+	}
+	printf("ptr's package is %s.\n",ptr.package);
+	printf("ptr's section is %s.\n",ptr.section);
+	printf("ptr's option is %s.\n",ptr.option);
+    
+	ret = uci_set(ctx, &ptr);
+	if (ret != UCI_OK){
+		fprintf(stderr,"uci_set ret is not ok.\n");
+		return ret;
+	}
+	if ( UCI_OK != (ret = uci_commit(ctx, &ptr.p, false))) {
+	    printf("uci_set_option:uci commit failed.\n");
+	    return ret;
+	}
+	return ret;
+
+}
+
+static int uci_do_add(struct uci_context *ctx,struct uci_package *pkg,char *section_type,Meter *meter)
+{
+	struct uci_section *s = NULL;
+	int ret;
+	struct uci_ptr ptr;
+	struct uci_element *e = NULL;
+
+	ret = uci_add_section(ctx, pkg, section_type, &s);
+
+	if (ret != UCI_OK){
+		fprintf(stderr,"add  section failed.\n");
+		return ret;
+	}
+	printf("section's name is %s.\n",s->e.name);
+	char ptr_str[64] = {0};
+	sprintf(ptr_str,"meter_lastvalue.%s",s->e.name);
+
+	if (uci_lookup_ptr(ctx, &ptr, ptr_str, true) != UCI_OK) { printf("lookup_ptr failed.\n");
+	    return 1;
+	}
+	printf("ptr's package is %s.\n",ptr.package);
+	printf("ptr's section is %s.\n",ptr.section);
+	printf("ptr's option is %s.\n",ptr.option);
+
+	ptr.value = strdup(meter->name);
+
+	if ((ret = uci_rename(ctx,&ptr) != UCI_OK))
+	{
+	    fprintf(stderr,"uci_rename failed.\n");
+	    return ret;
+	}
+
+	sprintf(ptr_str,"meter_lastvalue.%s.modbus_id=%d",s->e.name,meter->modbus_id);
+	printf("ptr_str is %s.\n",ptr_str);
+#if 0
+
+	if (uci_lookup_ptr(ctx, &ptr, ptr_str, true) != UCI_OK) { printf("lookup_ptr failed.\n");
+	    return 1;
+	}
+    
+	ret = uci_set(ctx, &ptr);
+	if (ret != UCI_OK){
+		fprintf(stderr,"ret is not ok.\n");
+		return ret;
+	}
+#endif
+	if( ret = uci_set_option(ctx,ptr_str) != UCI_OK){
+		fprintf(stderr,"ret is not ok.\n");
+		return ret;
+	}
+
+	int i;
+	Meter_Attribute *attribute = meter->attribute;
+
+	for(i = 0; i < meter->attr_num; i++,attribute++)
+	{
+	    sprintf(ptr_str,"meter_lastvalue.%s.%s=%d",s->e.name,attribute->value_unit,0);
+	    printf("ptr_str is %s.\n",ptr_str);
+
+#if 0 
+	    if ((ret = uci_lookup_ptr(ctx, &ptr, ptr_str, true)) != UCI_OK) { 
+		printf("lookup_ptr failed.\n");
+		return ret;
+	    }
+	    ret = uci_set(ctx, &ptr);
+	    if (ret != UCI_OK){
+		fprintf(stderr,"ret is not ok.\n");
+		return ret;
+	    }
+#endif
+	    if( ret = uci_set_option(ctx,ptr_str) != UCI_OK){
+		fprintf(stderr,"ret is not ok.\n");
+		return ret;
+	    }
+	
+	}
+#if 0
+	if ( UCI_OK != (ret = uci_commit(ctx, &pkg, false))) {
+	    printf("uci commit failed.\n");
+	    return ret;
+	}
+#endif
+
+
+
+	return ret;
+}
+bool load_meter_lastvalue_config()
+{
+    Sll
+        *lp,
+        *new=NULL;
+    Meter
+        *meter;
+
+    int
+        n=0;
+
+
+    struct uci_package * pkg = NULL;
+    struct uci_element *e;
+    char *tmp;
+    const char *value;
+    int modbus_id;
+    struct uci_section *s;
+
+
+    ctx = uci_alloc_context(); 
+    if (UCI_OK != uci_load(ctx, METER_LASTVALUE_UCI_CONFIG_FILE, &pkg))
+        goto cleanup; 
+
+    for(lp=head;lp;lp=lp->next)
+    {
+	meter = (Meter *)lp->data;
+	int flag = 0;
+	uci_foreach_element(&pkg->sections, e)
+	{
+	    s = uci_to_section(e);
+	
+
+	    if(!strcmp("meter_lastvalue",s->type))
+	    {
+		printf("section s's type is meter_lastvalue\n");
+		if (NULL != (value = uci_lookup_option_string(ctx, s, "modbus_id"))) 
+		{
+		    modbus_id = atoi(value);
+		    if ( meter->modbus_id ==  modbus_id){
+			flag = 1; 
+			printf("found a section belonging to the meter.\n");
+		    }
+		}
+					
+	    }
+	}
+	if(flag == 0)   //no seciton belongs to the current meter
+	{
+	    printf("currently no section belongs to the meter, create a new section.\n");
+	    if ( UCI_OK != uci_do_add(ctx,pkg,"meter_lastvalue",meter))
+		fprintf(stderr,"uci do add failed.\n");
+	}
+    }
+
+cleanup:
+    uci_free_context(ctx);
+    ctx = NULL;
+}
 int load_attr_config()
 {
     struct uci_package * pkg = NULL;
@@ -212,7 +432,7 @@ int load_attr_config()
         	if (NULL != (value = uci_lookup_option_string(ctx, s, "total_diff")))
         	{
             		meter->current_attr->total_diff = strdup(value); 
-            		printf(" total_diff is %s.\n",meter->current_attr->value_unit);
+            		printf(" total_diff is %s.\n",meter->current_attr->total_diff);
         	}
         	if (NULL != (value = uci_lookup_option_string(ctx, s, "tagid")))
         	{
@@ -359,6 +579,7 @@ void meter_init(void)
 {
     load_meter_config();
     load_attr_config();
+    load_meter_lastvalue_config();
 }
 enum output_format
 {
@@ -789,12 +1010,18 @@ void timer_thread_sample(union sigval v)
     static char file_path[64];
     static char file_tmp_path[64];
     static char file_name[64];
+    struct uci_context *ctx_uci;
+    int ret = UCI_OK;
+
+    
 
     //head: the global meter linked list head
     for (l=head; l; l=l->next)
     {
 	//get a meter
         meter = (Meter*) l->data;
+
+	ctx_uci = uci_alloc_context();
 
 	//sample data file gets created the first time sample interval timer expires
 	if(counter == 1){
@@ -842,7 +1069,7 @@ void timer_thread_sample(union sigval v)
     	uint8_t *tab_rp_bits;
     	uint16_t *tab_rp_registers;
     	uint16_t *tab_rp_registers_bad;
-    	modbus_t *ctx;
+    	modbus_t *ctx_modbus;
     	int i;
     	uint8_t value;
     	int nb_points;
@@ -863,18 +1090,18 @@ void timer_thread_sample(union sigval v)
 	Databits: 8
 	Stopbits: 1
 	*/
-    	ctx = modbus_new_rtu("/dev/ttyUSB0", 19200, 'N', 8, 1);
-    	if (ctx == NULL) {
+    	ctx_modbus = modbus_new_rtu("/dev/ttyUSB0", 19200, 'N', 8, 1);
+    	if (ctx_modbus == NULL) {
 	    fprintf(stderr, "Unable to allocate libmodbus context\n");
 	    exit -1;
     	}
-    	modbus_set_debug(ctx, TRUE);
-    	modbus_set_error_recovery(ctx,MODBUS_ERROR_RECOVERY_LINK | MODBUS_ERROR_RECOVERY_PROTOCOL);
-    	modbus_set_slave(ctx, meter->modbus_id);
+    	modbus_set_debug(ctx_modbus, TRUE);
+    	modbus_set_error_recovery(ctx_modbus,MODBUS_ERROR_RECOVERY_LINK | MODBUS_ERROR_RECOVERY_PROTOCOL);
+    	modbus_set_slave(ctx_modbus, meter->modbus_id);
 
-    	if (modbus_connect(ctx) == -1) {
+    	if (modbus_connect(ctx_modbus) == -1) {
         	fprintf(stderr, "Connection failed: %s\n", modbus_strerror(errno));
-        	modbus_free(ctx);
+        	modbus_free(ctx_modbus);
         	exit -1;
     	}
 
@@ -888,34 +1115,66 @@ void timer_thread_sample(union sigval v)
 	printf("attr_num is %d.\n",meter->attr_num);
 	for(i = 0; i < meter->attr_num && attribute; i++,attribute++){
 
+	    char attr_option[64] = {0};
+	    float attr_lastvalue;
+	    sprintf(attr_option,"meter_lastvalue.%s.%s",meter->name,attribute->value_unit);
+	    fprintf(stderr,"attr_option is %s.\n",attr_option);
+	    uci_get_option(ctx_uci,attr_option,&attr_lastvalue);
+
+	    printf("attr_lastvalue is %f.\n",attr_lastvalue);
+
     	    /* Single register */
 	    printf("reading register.\n");
 	    printf("addr is %d.\n",attribute->addr);
-	    rc = modbus_read_registers(ctx,attribute->addr,attribute->reg_num,tab_rp_registers);
+	    rc = modbus_read_registers(ctx_modbus,attribute->addr,attribute->reg_num,tab_rp_registers);
     	    if (rc == attribute->reg_num) 
 	    {
+
+		float attr_value;
+		if(!strcmp(attribute->value_type,"float")){
+		    fprintf(stderr,"attribute value_type is float.\n");
+		    attr_value = modbus_get_float(tab_rp_registers);
+		}
+		if(!strcmp(attribute->value_type,"float swap")){
+		    fprintf(stderr,"attribute value_type is float swap.\n");
+		    attr_value = modbus_get_float_cdab(tab_rp_registers);
+		}
+		sprintf(attr_option,"meter_lastvalue.%s.%s=%f",meter->name,attribute->value_unit,attr_value);
+		fprintf(stderr,"attr_option is %s.\n",attr_option);
+
+		if( ret = uci_set_option(ctx_uci,attr_option) != UCI_OK){
+		    fprintf(stderr,"ret is not ok.\n");
+		}
+
+		if(!strcmp(attribute->total_diff,"diff")){
+		    fprintf(stderr,"this attribute is diff.\n");
+		    fprintf(stderr,"attr_value is %f.\n",attr_value);
+		    fprintf(stderr,"attr_lastvalue is %f.\n",attr_lastvalue);
+		    attr_value = attr_value - attr_lastvalue;
+		    fprintf(stderr,"attr_value is %f.\n",attr_value);
+		}
 		
 	        //xml
 		if(meter_opfm == xml){
-		    fprintf(meter->file,"    <MeterData schema=\"Default\" version=\"1.0.0\">\n      <AcquistionDateTime>%s</AcquisitionDateTime>\n      <Value>%f</Value>\n      <MeterLocalId>%s</MeterLocalId>\n    </MeterData>\n",time_utc_xml,modbus_get_float_cdab(tab_rp_registers),attribute->tagid);
+		    fprintf(meter->file,"    <MeterData schema=\"Default\" version=\"1.0.0\">\n      <AcquistionDateTime>%s</AcquisitionDateTime>\n      <Value>%f</Value>\n      <MeterLocalId>%s</MeterLocalId>\n    </MeterData>\n",time_utc_xml,attr_value,attribute->tagid);
 		    fflush(meter->file);
 		}
 		else if(meter_opfm == csv){
 		    //csv
-		    fprintf(meter->file,"%s,%f,%s\n",time_utc_csv,modbus_get_float_cdab(tab_rp_registers),attribute->tagid);
+		    fprintf(meter->file,"%s,%f,%s\n",time_utc_csv,attr_value,attribute->tagid);
 		    fflush(meter->file);
 		}
 		else{
 		    second_trans(interval.sample_interval,interval_string);
 		    if(counter == 1){
-			fprintf(meter->file,"%s,%s,,%s,\"%s\\%s|%s\\%s\",%s,%s,%s,%s,%s,%d,%s,%d,%s,,%f#","MEPMD01,19970819",meter->sender_id,meter->receiver_id,meter->customer_id,meter->customer_name,meter->account_id,meter->account_name,time_local,meter->meter_id,"OK",meter->commodity,attribute->value_unit,attribute->constant,interval_string,get_upload_interval() / get_sample_interval(),time_utc,modbus_get_float_cdab(tab_rp_registers));
+			fprintf(meter->file,"%s,%s,,%s,\"%s\\%s|%s\\%s\",%s,%s,%s,%s,%s,%d,%s,%d,%s,,%f#","MEPMD01,19970819",meter->sender_id,meter->receiver_id,meter->customer_id,meter->customer_name,meter->account_id,meter->account_name,time_local,meter->meter_id,"OK",meter->commodity,attribute->value_unit,attribute->constant,interval_string,get_upload_interval() / get_sample_interval(),time_utc,attr_value);
 		    }
 		    else{	
 			if( i == meter->attr_num -1){	
-			    fprintf(meter->file,",,,%f",modbus_get_float_cdab(tab_rp_registers));
+			    fprintf(meter->file,",,,%f",attr_value);
 			}
 			else{
-			    fprintf(meter->file,",,,%f#",modbus_get_float_cdab(tab_rp_registers));
+			    fprintf(meter->file,",,,%f#",attr_value);
 			}
 			fflush(meter->file);
 		    }
@@ -944,8 +1203,8 @@ close:
     	free(tab_rp_registers);
 
     	/* Close the connection */
-    	modbus_close(ctx);
-    	modbus_free(ctx);
+    	modbus_close(ctx_modbus);
+    	modbus_free(ctx_modbus);
    
 
 
@@ -1013,6 +1272,155 @@ close:
 	 }
 	 upload_file(file_path,file_name);
     }
+}
+int meterStatus[32]={0};
+//CallBack
+
+int SBS_MsgProc(int SrcModuleID,int MsgType,int wParam,int lParam,char* StringParam,int len)
+{
+	int iret = 0;
+	printf("SrcModuleID=%d MessageID=%d wParam=%d lParam=%d StringParam=%s len=%d\n",
+		SrcModuleID, MsgType, wParam, lParam, StringParam, len);
+    switch(MsgType)
+	{
+        case MSG_SBS_REBOOT:
+            //ÖØÆô·þÎñ
+            break;
+        default:
+            break;
+    }
+
+    return iret;
+}
+
+int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,char** str, int *len)
+{
+	printf("SrcModuleID=%d MessageID=%d\n ", SrcModuleID, MessageID);
+
+    switch(MessageID)
+	{
+        case MSG_SBS_FTP_TEST:
+            // 1±íÊ¾²âÊÔ³É¹¦£¬0±íÊ¾²âÊÔÊ§°Ü
+            *param1 = 1;
+            usleep(5*1000*1000);
+            break; 
+        case MSG_SBS_METER_STATUS:
+            {
+                char tmp[32]={0};
+                int i;
+                for(i=0; i<32; i++)
+                {
+                    tmp[i] = meterStatus[i] ? '1':'0';
+                }
+    			memcpy(str, tmp, strlen(tmp));
+    			*len = 32;
+            }
+            break;
+        case MSG_SBS_TEST://½ö²âÊÔÓÃ
+        {
+
+	    FILE *tmp_file = fopen("/tmp/meter_values","w");
+	    if(tmp_file == NULL)
+		fprintf(stderr,"failed to open meter_values file.\n");
+	    
+	    Sll *l;
+	    Meter *meter;
+	    for (l=head; l; l=l->next)
+	    {
+		//get a meter
+		meter = (Meter*) l->data;
+		fprintf(tmp_file,"%s ",meter->name);
+
+		//sample data file gets created the first time sample interval timer expires
+
+		uint8_t *tab_rp_bits;
+		uint16_t *tab_rp_registers;
+		uint16_t *tab_rp_registers_bad;
+		modbus_t *ctx;
+		int i;
+		uint8_t value;
+		int nb_points;
+		int rc;
+		float real;
+		uint32_t ireal;
+		struct timeval old_response_timeout;
+		struct timeval response_timeout;
+		int use_backend;
+		uint16_t tmp_value;
+		float float_value;
+		char interval_string[16];
+
+		ctx = modbus_new_rtu("/dev/ttyUSB0", 19200, 'N', 8, 1);
+		if (ctx == NULL) {
+		    fprintf(stderr, "Unable to allocate libmodbus context\n");
+		    exit -1;
+		}
+		modbus_set_debug(ctx, TRUE);
+		modbus_set_error_recovery(ctx,MODBUS_ERROR_RECOVERY_LINK | MODBUS_ERROR_RECOVERY_PROTOCOL);
+		modbus_set_slave(ctx, meter->modbus_id);
+
+		if (modbus_connect(ctx) == -1) {
+		    fprintf(stderr, "Connection failed: %s\n", modbus_strerror(errno));
+		    modbus_free(ctx);
+		    exit -1;
+		}
+
+
+		/* Allocate and initialize the memory to store the registers */
+		nb_points = 16; //max register number
+		tab_rp_registers = (uint16_t *) malloc(nb_points * sizeof(uint16_t));
+		memset(tab_rp_registers, 0, nb_points * sizeof(uint16_t));
+
+		Meter_Attribute *attribute = meter->attribute;
+		printf("attr_num is %d.\n",meter->attr_num);
+		fprintf(tmp_file,"%d ",meter->attr_num);
+		for(i = 0; i < meter->attr_num && attribute; i++,attribute++){
+
+		    /* Single register */
+		    printf("reading register.\n");
+		    printf("addr is %d.\n",attribute->addr);
+		    rc = modbus_read_registers(ctx,attribute->addr,attribute->reg_num,tab_rp_registers);
+		    if (rc == attribute->reg_num) 
+		    {
+			if(!strcmp(meter->name,"PM700"))
+			    fprintf(tmp_file,"%.3f %s ",modbus_get_float_cdab(tab_rp_registers),attribute->value_unit);
+			else 
+			    fprintf(tmp_file,"%.3f %s ",modbus_get_float(tab_rp_registers),attribute->value_unit);
+
+		    }
+		    else
+			fprintf(tmp_file,"%.3f ",0);
+
+		}
+		fprintf(tmp_file,"\n");
+		free(tab_rp_registers);
+		/* Close the connection */
+		modbus_close(ctx);
+		modbus_free(ctx);
+	    }
+	    fclose(tmp_file);
+
+	    tmp_file = fopen("/tmp/meter_values","r");
+	    if(tmp_file == NULL)
+		fprintf(stderr,"failed to open file meter_values.\n");
+
+            char info[256]={0};
+	    char *p;
+
+	    while (fgets(info,256,tmp_file) != NULL){
+		//p = strchr(info,'\n');
+		//*p = '\0';
+		strcat(str,info);
+	    }
+	    printf("str is %s.\n",str);
+            *len = strlen(str);
+        }
+            break;
+        default:
+            break;
+    }
+    
+    return 0;
 }
 
 int main()
@@ -1088,7 +1496,17 @@ int main()
 	perror("fail to sample timer_settime");
 	exit(-1);
     }
+    printf("sbs server\n");
+
+    /*init socket file and handle*/
+    Init(MODULE_SERVER);
+    FuncHostCallback FC;
+    FC.pSBS_MsgProc=SBS_MsgProc;
+    FC.pSBS_GetValue=SBS_GetValue_Proc;
+	/*register call back func*/
+    RegisterHostCallBack(FC);
     pause();
+    Clear(MODULE_SERVER);
 	
     return 0;
 }

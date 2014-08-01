@@ -50,7 +50,6 @@ static int uci_do_add(struct uci_context *ctx,struct uci_package *pkg,char *sect
 	ret = uci_add_section(ctx, pkg, section_type, &s);
 	if (ret != UCI_OK){
 		fprintf(stderr,"add  section failed.\n");
-
 		return ret;
 	}
 
@@ -375,11 +374,13 @@ cleanup:
 
 int main (int argc,char **argv) 
 {
-	load_meter_config();
-	load_attr_config();
+    load_meter_config();
+    load_attr_config();
+
     int n=0;
 	Sll *l;
 	Meter *addr;
+
     for (l=head; l; l=l->next)
     {
         addr=(Meter*) l->data;

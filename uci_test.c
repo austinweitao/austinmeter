@@ -45,14 +45,13 @@ int main (int argc, char *argv[])
     printf("ptr.section is %s.\n",ptr.section);
     printf("ptr.option is %s.\n",ptr.option);
     printf("ptr.value is %s.\n",ptr.value);
-    
+#if 0 
     e = ptr.last;
     if (!(ptr.flags & UCI_LOOKUP_COMPLETE)) {
 	ctx->err = UCI_ERR_NOTFOUND;
 	printf("complete failed \n");
 	return 1;
     }
-    /*
     switch(e->type) {
 	case UCI_TYPE_SECTION:
 	    printf("%s\n", ptr.s->type);
@@ -63,7 +62,9 @@ int main (int argc, char *argv[])
 	 default:
 	    break;
     }
-    */
+#endif
+
+
     ret = uci_set(ctx, &ptr);
     if (uci_commit(ctx, &ptr.p, false) != UCI_OK) {
 	printf("uci commit failed.\n");

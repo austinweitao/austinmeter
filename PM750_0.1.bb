@@ -30,7 +30,7 @@ S = "${WORKDIR}"
 do_compile() {
   ${CC} ${CFLAGS} -o timer2 timer2.c sll.c -lmodbus -lrt -lcurl
   ${CC} ${CFLAGS} -o pm1200_test pm1200_test.c -lmodbus -lrt -lcurl
-  ${CC} ${CFLAGS} -o sampling sampling.c sll.c -lmodbus -lrt -lcurl -luci
+  ${CC} ${CFLAGS} -o sampling sampling.c sbslog.c sll.c unsock.c libsocket.c -lpthread -lmodbus -lrt -lcurl -luci
   ${CC} ${CFLAGS} -o append append.c sll.c -luci
   ${CC} ${CFLAGS} -o ftpupload ftpupload.c -lcurl
   ${CC} ${CFLAGS} -o uci_test uci_test.c -luci
