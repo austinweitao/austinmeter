@@ -18,14 +18,6 @@
 #include <uci.h>
 #include "libsocket.h"
 
-enum MsgType
-{
-    MSG_SBS_FTP_TEST=0,
-    MSG_SBS_METER_STATUS,
-    MSG_SBS_REBOOT,
-    MSG_SBS_TEST,
-};
-
 #define	    xml_header		"<?xml_version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>\n<XML>\n  <action type=\"update\">"
 #define	    xml_ender		"  </action>\n</XML>"
 #define	    csv_header		"###ACTION:UPDATE ENTITY:MeterData SCHEMA:Default VERSION:1.0.0"
@@ -59,6 +51,21 @@ enum MsgType
 #define	    UCI_FTP_PASSWORD		"ftp.general.ftp_password"
 #define	    UCI_FTP_FILE_PATH		"ftp.general.ftp_file_path"
 #define	    UCI_FTP_SSL			"ftp.general.ftp_ssl"
+#define	    UCI_UART_DATABITS		"uart.general.data_bit"
+#define	    UCI_UART_STOPBITS		"uart.general.stop_bit"
+#define	    UCI_UART_BAUDRATE		"uart.general.baud"
+#define	    UCI_UART_PARITY		"uart.general.parity"
+
+#define SECSPERHOUR 3600
+#define SECSPERMIN 60	
+/*=====================defined struct================================*/
+enum MsgType
+{
+    MSG_SBS_FTP_TEST=0,
+    MSG_SBS_METER_STATUS,
+    MSG_SBS_REBOOT,
+    MSG_SBS_TEST,
+};
 
 typedef struct{
     int addr;	// meter attribute register start address
@@ -90,6 +97,53 @@ typedef struct{
     FILE * file;		//file descriptor for sampling data file
     FILE * file_tmp;		//file descriptor for sampling data file
 }Meter;
+
+typedef struct{
+    int databits;
+    int stopbits;
+    int baudrate;
+    char parity;
+}UART_config;
+
+
+typedef struct{
+    char *ftp_addr;
+    char *ftp_port;
+    char *ftp_user_name;
+    char *ftp_password;
+    char *ftp_file_path;
+    char *ftp_ssl;
+}FTP_config;
+
+typedef struct {
+	int sample_interval;
+	int upload_interval;
+}Interval;
+
+enum output_format
+{
+    cmep,
+    xml,
+    csv
+};
+/*===========================end======================================*/
+
+/*=====================global shared resources=========================*/
+
+static pid_t mainpid;
+static struct uci_context * ctx = NULL; 
+Sll *head = NULL;
+
+enum output_format meter_opfm;
+char output_file_prefix[64] = {0};
+
+UART_config *uart_config;
+FTP_config *ftp_config;
+FTP_REMOTE_URL[128] = {0};
+Interval interval;
+int meterStatus[32]={0};
+/*===========================end=======================================*/
+
 
 float modbus_get_float_cdab(uint16_t* value)
 {
@@ -173,60 +227,42 @@ static void freeData(void **data)
 	printf("\n");
 }
 
-
-/*  
-	global meter single linked list head
-	super important, be aware of mutual exclusion
-	global shared resources
-*/
-static struct uci_context * ctx = NULL; 
-Sll *head = NULL;
-
-
-static int uci_get_option(struct uci_context *ctx, char *string, float *value)
+static int uci_get_option(struct uci_context *ctx_uci, char *string, float *value)
 {
 	printf("uci_get_option.\n");
 	int ret = UCI_OK;
 	struct uci_ptr ptr;
 	printf("string is %s.\n",string);
 
-	if ((ret = uci_lookup_ptr(ctx, &ptr,string, true)) != UCI_OK) 
+	if ((ret = uci_lookup_ptr(ctx_uci, &ptr,string, true)) != UCI_OK) 
 	{ 
 	    printf("lookup_ptr failed.\n");
 	    return ret;
 	}
-	printf("ptr's package is %s.\n",ptr.package);
-	printf("ptr's section is %s.\n",ptr.section);
-	printf("ptr's option is %s.\n",ptr.option);
 	*value = atof(ptr.o->v.string);
 	printf("value is %f.\n",*value);
 	return ret;
 }
 
 
-static int uci_set_option(struct uci_context *ctx, char *string)
+static int uci_set_option(struct uci_context *ctx_uci, char *string)
 {
 	int ret = UCI_OK;
 	struct uci_ptr ptr;
 
-	printf("uci_set_option. in this funciton\n");
 	printf("string is %s.\n",string);
 
-	if ((ret = uci_lookup_ptr(ctx, &ptr,string, true)) != UCI_OK) 
+	if ((ret = uci_lookup_ptr(ctx_uci, &ptr,string, true)) != UCI_OK) 
 	{ 
 	    printf("lookup_ptr failed.\n");
 	    return ret;
 	}
-	printf("ptr's package is %s.\n",ptr.package);
-	printf("ptr's section is %s.\n",ptr.section);
-	printf("ptr's option is %s.\n",ptr.option);
-    
-	ret = uci_set(ctx, &ptr);
+	ret = uci_set(ctx_uci, &ptr);
 	if (ret != UCI_OK){
 		fprintf(stderr,"uci_set failed.\n");
 		return ret;
 	}
-	if ( UCI_OK != (ret = uci_commit(ctx, &ptr.p, false))) {
+	if ( UCI_OK != (ret = uci_commit(ctx_uci, &ptr.p, false))) {
 	    printf("uci_set_option:uci commit failed.\n");
 	    return ret;
 	}
@@ -377,7 +413,6 @@ int load_attr_config()
     }
 	
 
-
     uci_foreach_element(&pkg->sections, e)
     {
     	struct uci_section *s = uci_to_section(e);
@@ -388,53 +423,57 @@ int load_attr_config()
 	{
         	if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "name")))
         	{
-            		printf("this attr belongs to meter: %s.\n",value);
-
-			for(lp=head;lp;lp=lp->next)
+		    int meter_flag = 0;
+		    for(lp=head;lp;lp=lp->next)
+		    {
+			    meter = (Meter *)lp->data;
+			    if(!strcmp(meter->name,value)){
+				meter_flag =1; 
+				break;
+			    }
+		    }
+		    if(meter_flag == 1)
+		    {
+			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "addr")))
 			{
-				meter = (Meter *)lp->data;
-				if(!strcmp(meter->name,value))
-					break;
+				meter->current_attr->addr = atoi(value); 
+				printf(" attr addr is  %d.\n",meter->current_attr->addr);
 			}
-					
+			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "reg_num")))
+			{
+				meter->current_attr->reg_num = atoi(value); 
+				printf(" reg num  is  %d.\n",meter->current_attr->reg_num);
+			}
+			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "constant")))
+			{
+				meter->current_attr->constant = atoi(value); 
+				printf(" constant  is  %d.\n",meter->current_attr->constant);
+			}
+			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "value_type")))
+			{
+				meter->current_attr->value_type = strdup(value); 
+				printf(" value_type  is  %s.\n",meter->current_attr->value_type);
+			}
+			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "value_unit")))
+			{
+				meter->current_attr->value_unit = strdup(value); 
+				printf(" value_unit  is  %s.\n",meter->current_attr->value_unit);
+			}
+			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "total_diff")))
+			{
+				meter->current_attr->total_diff = strdup(value); 
+				printf(" total_diff is %s.\n",meter->current_attr->total_diff);
+			}
+			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "tagid")))
+			{
+				meter->current_attr->tagid = strdup(value); 
+				printf(" tagid is %s.\n",meter->current_attr->tagid);
+			}
+						
+			meter->current_attr++;
+		    }
+				
 		}
-        	if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "addr")))
-        	{
-            		meter->current_attr->addr = atoi(value); 
-            		printf(" attr addr is  %d.\n",meter->current_attr->addr);
-        	}
-        	if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "reg_num")))
-        	{
-            		meter->current_attr->reg_num = atoi(value); 
-            		printf(" reg num  is  %d.\n",meter->current_attr->reg_num);
-        	}
-        	if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "constant")))
-        	{
-            		meter->current_attr->constant = atoi(value); 
-            		printf(" constant  is  %d.\n",meter->current_attr->constant);
-        	}
-        	if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "value_type")))
-        	{
-            		meter->current_attr->value_type = strdup(value); 
-            		printf(" value_type  is  %s.\n",meter->current_attr->value_type);
-        	}
-        	if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "value_unit")))
-        	{
-            		meter->current_attr->value_unit = strdup(value); 
-            		printf(" value_unit  is  %s.\n",meter->current_attr->value_unit);
-        	}
-        	if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "total_diff")))
-        	{
-            		meter->current_attr->total_diff = strdup(value); 
-            		printf(" total_diff is %s.\n",meter->current_attr->total_diff);
-        	}
-        	if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "tagid")))
-        	{
-            		meter->current_attr->tagid = strdup(value); 
-            		printf(" tagid is %s.\n",meter->current_attr->tagid);
-        	}
-					
-		meter->current_attr++;
 
 	}
 
@@ -481,6 +520,7 @@ int load_meter_config()
 	    {
 		if(!strcmp(value,"enable"))
 		{
+		    printf("this meter seciton is enabled.\n");
 		
 		    meter = (Meter*) malloc(sizeof(Meter));
 		    if (meter == NULL)
@@ -563,6 +603,8 @@ int load_meter_config()
 
 		    meter->current_attr = meter->attribute;
 		}
+		else
+		    printf("this meter section is disabled.\n");
 	    }
 
 	}
@@ -585,14 +627,6 @@ int meter_init(void)
 	return ret;
     return ret;
 }
-enum output_format
-{
-    cmep,
-    xml,
-    csv
-};
-enum output_format meter_opfm;
-char output_file_prefix[8] = {0};
 
 int meter_output_prefix(void){
 
@@ -636,11 +670,13 @@ int meter_output_format(void){
 		    printf("v2 type is %s.\n",value);
 		    if(!strcmp(value,"xml"))
 		    {
+			printf("v2 type is xml\n");
 			meter_opfm = xml;
 			return ret;
 		    }
 		    else if(!strcmp(value,"csv"))
 		    {
+			printf("v2 type is csv\n");
 			meter_opfm = csv;
 			return ret;
 		    }
@@ -659,19 +695,80 @@ int meter_output_format(void){
     }
 }
 
+int uart_init(void)
+{
+    int ret = 0;
 
-typedef struct{
-    char *ftp_addr;
-    char *ftp_port;
-    char *ftp_user_name;
-    char *ftp_password;
-    char *ftp_file_path;
-    char *ftp_ssl;
-}FTP_config;
+    uart_config = (UART_config *)malloc(sizeof(UART_config));
+    if(uart_config == NULL){
+	printf("uart_init: failed to alloc memeory.\n");
+	ret = -1;
+	//goto cleanup;
+    }
 
-FTP_config *ftp_config;
+    char value[32] = {0};
+    char string[64] = {0};
 
-FTP_REMOTE_URL[128] = {0};
+
+    //get uart baudrate
+    sprintf(string,"%s",UCI_UART_BAUDRATE);
+    if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
+    {
+	uart_config->baudrate = atoi(value);
+	printf("uart_config->baudrate is %d.\n",uart_config->baudrate);
+    }
+    else
+    {
+	printf("failed to get option:%s.\n",string);
+	return ret;
+    }
+    //get uart databits 
+    sprintf(string,"%s",UCI_UART_DATABITS);
+    if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
+    {
+	uart_config->databits = atoi(value);
+	printf("uart_config->databits is %d.\n",uart_config->databits);
+    }
+    else
+    {
+	printf("failed to get option:%s.\n",string);
+	return ret;
+    }
+    //get uart stopbits 
+    sprintf(string,"%s",UCI_UART_STOPBITS);
+    if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
+    {
+	uart_config->stopbits = atoi(value);
+	printf("uart_config->stopbits is %d.\n",uart_config->stopbits);
+    }
+    else
+    {
+	printf("failed to get option:%s.\n",string);
+	return ret;
+    }
+    //get uart parity 
+    sprintf(string,"%s",UCI_UART_PARITY);
+    if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
+    {
+	if(!strcmp(value,"None"))
+	    uart_config->parity = 'N';
+	if(!strcmp(value,"Even"))
+	    uart_config->parity = 'E';
+	if(!strcmp(value,"Odd"))
+	    uart_config->parity = 'O';
+	printf("uart_config->parity is %c.\n",uart_config->parity);
+    }
+    else
+    {
+	printf("failed to get option:%s.\n",string);
+	return ret;
+    }
+	
+
+    return ret;
+}
+
+
 int ftp_init(void)
 {
     int ret = 0;
@@ -679,7 +776,7 @@ int ftp_init(void)
 
     ftp_config = (FTP_config *)malloc(sizeof(FTP_config));
     if(ftp_config == NULL){
-	printf("failed to alloc memeory.\n");
+	printf("ftp_init: failed to alloc memeory.\n");
 	ret = -1;
 	//goto cleanup;
     }
@@ -771,22 +868,13 @@ int ftp_init(void)
     printf("FTP_REMOTE_URL is %s.\n",FTP_REMOTE_URL);
     return ret;
 }
-//unit:minutes
-typedef struct {
-	int sample_interval;
-	int upload_interval;
-}Interval;
-
 /*  
 	user defined sample interval and upload interval
 	super important, be aware of mutual exclusion
 	global shared resources
 */
-Interval interval;
 int get_interval(char *interval_name, char *custom_interval_name)
 {
-    printf("interval_name is %s.\n",interval_name);
-    printf("custom_interval_name is %s.\n",custom_interval_name);
     int interval;
     int ret = -1;
 
@@ -825,14 +913,14 @@ int get_interval(char *interval_name, char *custom_interval_name)
     }
 
 }
-
+// returned values in minutes
 int get_sample_interval()
 {
     char sample_interval[] = UCI_SAMPLE_INTERVAL;
     char custom_sample_interval[] = CUSTOM_UCI_SAMPLE_INTERVAL;
     return get_interval(sample_interval,custom_sample_interval);
 }
-
+//returned values in minutes
 int get_upload_interval()
 {
     char upload_interval[] = UCI_UPLOAD_INTERVAL;
@@ -852,22 +940,20 @@ int interval_init(Interval *interval)
 	return -1;
     }
     else
-	interval->sample_interval = value;
+	interval->sample_interval = value;   //minutes to seconds
     if((value = get_upload_interval()) == -1)
     {
 	printf("get_upload_interval failed.\n");
 	return -1;
     }
     else
-	interval->upload_interval = value;
+	interval->upload_interval = value;  //minutes to seconds
 
     printf("sample interval:%d\n",interval->sample_interval);
     printf("upload interval:%d\n\n",interval->upload_interval);
     return ret;
 }
 
-#define SECSPERHOUR 3600
-#define SECSPERMIN 60	
 // interval in seconds to MON:DAY:HH:MM string
 void second_trans(int seconds,char *time)
 {
@@ -896,7 +982,7 @@ void itimer_init(struct tm *info, struct itimerspec *it_spec,int it_interval)
     else
 	secs_left = SECSPERHOUR - (info->tm_min * SECSPERMIN + info->tm_sec);
 	
-		
+    printf("secs_left is %d.\n",secs_left);	
     if(secs_left == 0)	
     {
 	it_spec->it_interval.tv_sec = secs_interval;
@@ -1035,9 +1121,9 @@ void timer_thread_sample(union sigval v)
     if(counter == interval.upload_interval / interval.sample_interval)
 	upload = true;
 
-    char time_utc[16] = {0};
-    char time_local[16] = {0};
-    char time_local_file[24] = {0};
+    char time_utc[48] = {0};
+    char time_local[48] = {0};
+    char time_local_file[48] = {0};
     char time_utc_xml[48] = {0};
     char time_utc_csv[48] = {0};
     time_t rawtime;
@@ -1150,7 +1236,8 @@ void timer_thread_sample(union sigval v)
 	Databits: 8
 	Stopbits: 1
 	*/
-    	ctx_modbus = modbus_new_rtu("/dev/ttyUSB0", 19200, 'N', 8, 1);
+    	ctx_modbus = modbus_new_rtu("/dev/ttyUSB0", uart_config->baudrate, uart_config->parity, 
+						    uart_config->databits, uart_config->stopbits);
     	if (ctx_modbus == NULL) {
 	    fprintf(stderr, "Unable to allocate libmodbus context\n");
 	    exit -1;
@@ -1203,7 +1290,7 @@ void timer_thread_sample(union sigval v)
 		fprintf(stderr,"attr_option is %s.\n",attr_option);
 
 		if( ret = uci_set_option(ctx_uci,attr_option) != UCI_OK){
-		    fprintf(stderr,"ret is not ok.\n");
+		   fprintf(stderr,"ret is not ok.\n");
 		}
 
 		if(!strcmp(attribute->total_diff,"diff")){
@@ -1216,6 +1303,7 @@ void timer_thread_sample(union sigval v)
 		
 	        //xml
 		if(meter_opfm == xml){
+		    fprintf(stderr,"###debug3######.\n");
 		    fprintf(meter->file,"    <MeterData schema=\"Default\" version=\"1.0.0\">\n      <AcquistionDateTime>%s</AcquisitionDateTime>\n      <Value>%f</Value>\n      <MeterLocalId>%s</MeterLocalId>\n    </MeterData>\n",time_utc_xml,attr_value,attribute->tagid);
 		    fflush(meter->file);
 		}
@@ -1334,7 +1422,6 @@ close:
 	 upload_file(file_path,file_name,error_str);
     }
 }
-int meterStatus[32]={0};
 //CallBack
 
 int SBS_MsgProc(int SrcModuleID,int MsgType,int wParam,int lParam,char* StringParam,int len)
@@ -1345,7 +1432,8 @@ int SBS_MsgProc(int SrcModuleID,int MsgType,int wParam,int lParam,char* StringPa
     switch(MsgType)
 	{
         case MSG_SBS_REBOOT:
-            //ÖØÆô·þÎñ
+	    printf("about to send SIGINT to %d.\n",mainpid);
+	    kill(mainpid,SIGINT);
             break;
         default:
             break;
@@ -1500,9 +1588,27 @@ int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,cha
     
     return 0;
 }
-
-int main()
+void sig_handler(int sig_no)
 {
+    if(sig_no == SIGINT)
+	printf("catch signal interrupt.\n");
+}
+
+int main(int argc,char *argv[])
+{
+    //save the current pid;
+    mainpid = getpid();
+
+    //register signal SIGINT handler
+
+    if( signal(SIGINT,sig_handler) == SIG_ERR)
+	printf("failed to register SIGINT handler.\n");
+
+    if(UCI_OK != uart_init())
+    {
+	printf("uart init failed.\n");
+	return -1;
+    }
     
     if(UCI_OK != ftp_init())
     {
@@ -1559,8 +1665,7 @@ int main()
     struct sigevent evp_sample;
     memset(&evp_sample, 0, sizeof(struct sigevent));		
 
-    evp_sample.sigev_value.sival_int = 100;			
-    evp_sample.sigev_notify = SIGEV_THREAD;		
+    evp_sample.sigev_value.sival_int = 100;			evp_sample.sigev_notify = SIGEV_THREAD;		
     evp_sample.sigev_notify_function = timer_thread_sample;		
 
     if (timer_create(CLOCKID, &evp_sample, &timerid_sample) == -1) {
@@ -1597,6 +1702,8 @@ int main()
 	/*register call back func*/
     RegisterHostCallBack(FC);
     pause();
+    perror("pause return reason:");
+    execv(argv[0],argv);
     Clear(MODULE_SERVER);
 	
     return 0;
