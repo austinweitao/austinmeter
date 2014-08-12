@@ -227,22 +227,6 @@ static void freeData(void **data)
 	printf("\n");
 }
 
-static int uci_get_option(struct uci_context *ctx_uci, char *string, float *value)
-{
-	printf("uci_get_option.\n");
-	int ret = UCI_OK;
-	struct uci_ptr ptr;
-	printf("string is %s.\n",string);
-
-	if ((ret = uci_lookup_ptr(ctx_uci, &ptr,string, true)) != UCI_OK) 
-	{ 
-	    printf("lookup_ptr failed.\n");
-	    return ret;
-	}
-	*value = atof(ptr.o->v.string);
-	printf("value is %f.\n",*value);
-	return ret;
-}
 
 
 static int uci_set_option(struct uci_context *ctx_uci, char *string)
@@ -1156,8 +1140,9 @@ void timer_thread_sample(union sigval v)
     static char file_path[64];
     static char file_tmp_path[64];
     static char file_name[64];
-    struct uci_context *ctx_uci;
     int ret = UCI_OK;
+    uci_context *ctx_uci = NULL;
+    ctx_uci = uci_alloc_context();
 
     
 
@@ -1166,8 +1151,6 @@ void timer_thread_sample(union sigval v)
     {
 	//get a meter
         meter = (Meter*) l->data;
-
-	ctx_uci = uci_alloc_context();
 
 	//sample data file gets created the first time sample interval timer expires
 	if(counter == 1){
@@ -1263,11 +1246,12 @@ void timer_thread_sample(union sigval v)
 	for(i = 0; i < meter->attr_num && attribute; i++,attribute++){
 
 	    char attr_option[64] = {0};
+	    char option_value[64] = {0};
 	    float attr_lastvalue;
 	    sprintf(attr_option,"meter_lastvalue.%s.%s",meter->name,attribute->value_unit);
 	    fprintf(stderr,"attr_option is %s.\n",attr_option);
-	    uci_get_option(ctx_uci,attr_option,&attr_lastvalue);
-
+	    ftp_uci_get_option(attr_option,option_value);
+	    attr_lastvalue = atof(option_value);
 	    printf("attr_lastvalue is %f.\n",attr_lastvalue);
 
     	    /* Single register */
