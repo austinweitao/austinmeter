@@ -1024,7 +1024,7 @@ close:
 	 upload_file(file_path,file_name);
     }
 }
-int meterStatus[32]={0};
+static int meterStatus[32]={0};
 //CallBack
 
 int SBS_MsgProc(int SrcModuleID,int MsgType,int wParam,int lParam,char* StringParam,int len)

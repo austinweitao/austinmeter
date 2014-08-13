@@ -168,7 +168,7 @@ int main(int argc, char *argv[])
     /* tab_rp_bits is used to store bytes */
     rc = modbus_report_slave_id(ctx, tab_rp_bits);
     if (rc == -1) {
-        printf("FAILED\n");
+        sprintf(str,"report slave id FAILED\n");
         goto close;
     }
 

@@ -19,7 +19,7 @@ int SBS_Init();
 int SBS_Close();
 
 int SBS_CaptureReboot();
-int SBS_GetFtpTestResult(int *result);
+int SBS_GetFtpTestResult(char** status, int buf_size);
 int SBS_GetMeterStatus(char** status, int buf_size);
 int SBS_GetMeterInfo(char** info, int buf_size);
 

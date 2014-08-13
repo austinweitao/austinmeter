@@ -15,7 +15,7 @@
 
 #define	SOCKET_VERSION		"1.0.0"
 
-//int meterStatus[32]={0};
+int meterStatus[32]={0};
 
 enum  MessageID
 {
@@ -317,12 +317,12 @@ int GetValue(int DstModule,int MsgID,int SrcModule,int MsgType,int *Param1,int *
         
 		if (MsgType == MSG_SBS_FTP_TEST)
 		{
-			iEndClock= GetTimeTick() + ONE_SECOND*10;
+			iEndClock= GetTimeTick() + ONE_SECOND*20;
 		}
 
         if (MsgType == MSG_SBS_METER_STATUS)
 		{
-			iEndClock= GetTimeTick() + ONE_SECOND*5;
+			iEndClock= GetTimeTick() + ONE_SECOND*50;
 		}
 		
 		iCurClock = GetTimeTick();
@@ -701,14 +701,14 @@ int SBS_CaptureReboot()
 		return 0;
 }
 
-int SBS_GetFtpTestResult(int *result)
+int SBS_GetFtpTestResult(char** status, int buf_size)
 {
-	if (result == NULL)
+	if (status == NULL)
 		return -1;
 	
 	int ret;
 	ret = GetValue(MODULE_SERVER,MSG_GET_VALUE,MODULE_CLIENT,
-				MSG_SBS_FTP_TEST,result,NULL, NULL,0);
+				MSG_SBS_FTP_TEST,NULL,NULL,status, buf_size);
 
     if (ret == -1)
 	{

@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <pthread.h>
 
 #include "sll.h"
 #include <errno.h>
@@ -141,7 +142,8 @@ UART_config *uart_config;
 FTP_config *ftp_config;
 FTP_REMOTE_URL[128] = {0};
 Interval interval;
-int meterStatus[32]={0};
+
+pthread_mutex_t uart_mutex;
 /*===========================end=======================================*/
 
 
@@ -1040,11 +1042,13 @@ static int upload_file(char *file_to_upload, char *rename_to, char *error_str)
     curl = curl_easy_init();
     if(curl) {
 	/* build a list of commands to pass to libcurl */
-#if 0
+#if 1
 	/* We activate SSL and we require it for both control and data */
-	curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
-	curl_easy_setopt (curl, CURLOPT_SSL_VERIFYPEER, 0L); 
-	curl_easy_setopt (curl, CURLOPT_SSL_VERIFYHOST, 0L); 
+	if(!strcmp(ftp_config->ftp_ssl,"yes")){
+	    curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
+	    curl_easy_setopt (curl, CURLOPT_SSL_VERIFYPEER, 0L); 
+	    curl_easy_setopt (curl, CURLOPT_SSL_VERIFYHOST, 0L); 
+	}
 #endif
 	
 	/* Switch on full protocol/debug output */
@@ -1141,10 +1145,41 @@ void timer_thread_sample(union sigval v)
     static char file_tmp_path[64];
     static char file_name[64];
     int ret = UCI_OK;
-    uci_context *ctx_uci = NULL;
+    struct uci_context *ctx_uci = NULL;
     ctx_uci = uci_alloc_context();
 
     
+    uint8_t *tab_rp_bits;
+    uint16_t *tab_rp_registers;
+    modbus_t *ctx_modbus;
+    int i;
+    uint8_t value;
+    int nb_points;
+    int rc;
+    char interval_string[16];
+    printf("thread_sample: tring to lock uart_mutex .\n");
+    pthread_mutex_lock(&uart_mutex);
+    printf("thread_sample: get the uart_mutex lock.\n");
+
+    ctx_modbus = modbus_new_rtu("/dev/ttyUSB0", uart_config->baudrate, uart_config->parity, 
+						uart_config->databits, uart_config->stopbits);
+    if (ctx_modbus == NULL) {
+	fprintf(stderr, "Unable to allocate libmodbus context\n");
+	exit -1;
+    }
+    modbus_set_debug(ctx_modbus, TRUE);
+    modbus_set_error_recovery(ctx_modbus,MODBUS_ERROR_RECOVERY_LINK | MODBUS_ERROR_RECOVERY_PROTOCOL);
+
+    if (modbus_connect(ctx_modbus) == -1) {
+        fprintf(stderr, "Connection failed: %s\n", modbus_strerror(errno));
+        modbus_free(ctx_modbus);
+        exit -1;
+    }
+
+    /* Allocate and initialize the memory to store the registers */
+    nb_points = 64; //max register number
+    tab_rp_registers = (uint16_t *) malloc(nb_points * sizeof(uint16_t));
+    memset(tab_rp_registers, 0, nb_points * sizeof(uint16_t));
 
     //head: the global meter linked list head
     for (l=head; l; l=l->next)
@@ -1178,11 +1213,14 @@ void timer_thread_sample(union sigval v)
 	    (void )fprintf(stderr,"the file path is %s.\n",meter->file_path);
 	    (void )fprintf(stderr,"the tmp file path is %s.\n",meter->file_tmp_path);
 	}
+
 	(void )fprintf(stderr,"opening file %s.\n",meter->file_tmp_path);
 
 	meter->file = fopen(meter->file_tmp_path,"a");			
-	if(meter->file == NULL)
+	if(meter->file == NULL){
 	    perror("fopen failed:");
+	    exit(-1);
+	}
 
 
 	/*
@@ -1194,22 +1232,14 @@ void timer_thread_sample(union sigval v)
 	}
 	*/
 
-
+#if 0
     	uint8_t *tab_rp_bits;
     	uint16_t *tab_rp_registers;
-    	uint16_t *tab_rp_registers_bad;
     	modbus_t *ctx_modbus;
     	int i;
     	uint8_t value;
     	int nb_points;
     	int rc;
-    	float real;
-    	uint32_t ireal;
-    	struct timeval old_response_timeout;
-    	struct timeval response_timeout;
-    	int use_backend;
-    	uint16_t tmp_value;
-    	float float_value;
 	char interval_string[16];
 
 	/* gateway RS485 port config
@@ -1227,19 +1257,22 @@ void timer_thread_sample(union sigval v)
     	}
     	modbus_set_debug(ctx_modbus, TRUE);
     	modbus_set_error_recovery(ctx_modbus,MODBUS_ERROR_RECOVERY_LINK | MODBUS_ERROR_RECOVERY_PROTOCOL);
+#endif
     	modbus_set_slave(ctx_modbus, meter->modbus_id);
-
+#if 0
     	if (modbus_connect(ctx_modbus) == -1) {
         	fprintf(stderr, "Connection failed: %s\n", modbus_strerror(errno));
         	modbus_free(ctx_modbus);
         	exit -1;
     	}
+#endif
 
-
+#if 0
     	/* Allocate and initialize the memory to store the registers */
-    	nb_points = 16; //max register number
+    	nb_points = 64; //max register number
     	tab_rp_registers = (uint16_t *) malloc(nb_points * sizeof(uint16_t));
     	memset(tab_rp_registers, 0, nb_points * sizeof(uint16_t));
+#endif
 
 	Meter_Attribute *attribute = meter->attribute;
 	printf("attr_num is %d.\n",meter->attr_num);
@@ -1248,6 +1281,7 @@ void timer_thread_sample(union sigval v)
 	    char attr_option[64] = {0};
 	    char option_value[64] = {0};
 	    float attr_lastvalue;
+
 	    sprintf(attr_option,"meter_lastvalue.%s.%s",meter->name,attribute->value_unit);
 	    fprintf(stderr,"attr_option is %s.\n",attr_option);
 	    ftp_uci_get_option(attr_option,option_value);
@@ -1327,7 +1361,7 @@ void timer_thread_sample(union sigval v)
 	*/
 	(void )fprintf(stderr,"closing file %s.\n",meter->file_tmp_path);
 	fclose(meter->file);
-
+#if 0
 close:
     	/* Free the memory */
 
@@ -1337,6 +1371,7 @@ close:
     	/* Close the connection */
     	modbus_close(ctx_modbus);
     	modbus_free(ctx_modbus);
+#endif 
    
 
 
@@ -1356,6 +1391,16 @@ close:
 
 	}
     }
+    /* Free the memory */
+
+    printf("closing the modbus\n");
+    free(tab_rp_registers);
+    /* Close the connection */
+    modbus_close(ctx_modbus);
+    modbus_free(ctx_modbus);
+    printf("thread_sample: tring to unlock uart_mutex .\n");
+    pthread_mutex_unlock(&uart_mutex);
+
     if(upload)
     {
 	 /*
@@ -1447,23 +1492,124 @@ int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,cha
 	    fflush(ftp_file);
 	    fclose(ftp_file);
 	    if (0 == upload_file("/tmp/ftp_test","ftp_test",error_str))
-		*param1 = 1;
+	    {
+		sprintf(str,"1");
+		*len = 1;
+	    }
+		
 	    else 
 	    {
-		*param1 = -1;
-		printf("ftp test error is %s.\n",error_str);
+		sprintf(str,"0|%s",error_str);
 	    }
             break; 
         case MSG_SBS_METER_STATUS:
             {
-                char tmp[32]={0};
-                int i;
-                for(i=0; i<32; i++)
-                {
-                    tmp[i] = meterStatus[i] ? '1':'0';
-                }
-    			memcpy(str, tmp, strlen(tmp));
-    			*len = 32;
+		printf("meter_status:tring to lock uart_mutex .\n");
+		pthread_mutex_lock(&uart_mutex);
+		printf("meter_status:get the uart_mutex lock.\n");
+		uint8_t *tab_rp_bits;
+		uint16_t *tab_rp_registers;
+		modbus_t *ctx_modbus;
+		int i;
+		uint8_t value;
+		int nb_points;
+		int rc;
+		char interval_string[16];
+
+		Sll *l;
+		Meter *meter;
+		Meter_Attribute *attribute;
+		char meter_status[32] = {0};
+	    
+		ctx_modbus = modbus_new_rtu("/dev/ttyUSB0", uart_config->baudrate, uart_config->parity, 
+							uart_config->databits, uart_config->stopbits);
+		if (ctx_modbus == NULL) {
+		    sprintf(str, "0|Unable to allocate libmodbus context");
+		    return 0;
+		}
+		modbus_set_debug(ctx_modbus, TRUE);
+		modbus_set_error_recovery(ctx_modbus,
+					    MODBUS_ERROR_RECOVERY_LINK | MODBUS_ERROR_RECOVERY_PROTOCOL);
+		if (modbus_connect(ctx_modbus) == -1) {
+		    sprintf(str, "0|modbus Connection failed: %s", modbus_strerror(errno));
+		    modbus_free(ctx_modbus);
+		    return 0;
+		}
+		strcat(str,"1,");
+		/* Allocate and initialize the memory to store the bits */
+		nb_points = 64; //maximum reading registers number is 64
+		tab_rp_registers = (uint16_t *) malloc(nb_points * sizeof(uint16_t));
+		memset(tab_rp_registers, 0, nb_points * sizeof(uint16_t));
+
+		for (l=head; l; l=l->next)
+		{
+		    //get a meter
+		    meter = (Meter*) l->data;
+		    attribute = meter->attribute;
+#if 0
+		    ctx_modbus = modbus_new_rtu("/dev/ttyUSB0", uart_config->baudrate, uart_config->parity, 
+							    uart_config->databits, uart_config->stopbits);
+		    if (ctx_modbus == NULL) {
+			sprintf(str, "0|Unable to allocate libmodbus context");
+			return 0;
+		    }
+		    modbus_set_debug(ctx_modbus, TRUE);
+		    modbus_set_error_recovery(ctx_modbus,
+					    MODBUS_ERROR_RECOVERY_LINK | MODBUS_ERROR_RECOVERY_PROTOCOL);
+#endif
+		    modbus_set_slave(ctx_modbus, meter->modbus_id);
+#if 0
+		    if (modbus_connect(ctx_modbus) == -1) {
+			sprintf(str, "0|modbus Connection failed: %s", modbus_strerror(errno));
+			modbus_free(ctx_modbus);
+			return 0;
+		    }
+
+		    /* Allocate and initialize the memory to store the bits */
+		    nb_points = (UT_BITS_NB > UT_INPUT_BITS_NB) ? UT_BITS_NB : UT_INPUT_BITS_NB;
+		    tab_rp_bits = (uint8_t *) malloc(nb_points * sizeof(uint8_t));
+		    memset(tab_rp_bits, 0, nb_points * sizeof(uint8_t));
+		    /* Allocate and initialize the memory to store the bits */
+		    nb_points = (UT_BITS_NB > UT_INPUT_BITS_NB) ? UT_BITS_NB : UT_INPUT_BITS_NB;
+		    tab_rp_registers = (uint16_t *) malloc(nb_points * sizeof(uint16_t));
+		    memset(tab_rp_registers, 0, nb_points * sizeof(uint16_t));
+#endif
+
+		    rc = modbus_read_registers(ctx_modbus,
+				attribute->addr,attribute->reg_num,tab_rp_registers);
+		    if (rc == attribute->reg_num) 
+		    {
+			if(l->next)
+			    sprintf(meter_status,"%s|1,",meter->name);
+			else
+			    sprintf(meter_status,"%s|1",meter->name);
+			strcat(str,meter_status);
+		    }
+
+		    else {
+			if(l->next)
+			    sprintf(meter_status,"%s|0,",meter->name);
+			else
+			    sprintf(meter_status,"%s|0",meter->name);
+			strcat(str,meter_status);
+		    }
+
+#if 0	    
+		    free(tab_rp_bits);
+		    free(tab_rp_registers);
+
+		    modbus_close(ctx_modbus);
+		    modbus_free(ctx_modbus);
+#endif
+		    printf("returned str is %s.\n",str);
+		}
+		free(tab_rp_bits);
+		free(tab_rp_registers);
+		modbus_close(ctx_modbus);
+		modbus_free(ctx_modbus);
+		printf("tring to unlock uart_mutex .\n");
+		pthread_mutex_unlock(&uart_mutex);
+
             }
             break;
         case MSG_SBS_TEST://½ö²âÊÔÓÃ
@@ -1485,19 +1631,11 @@ int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,cha
 
 		uint8_t *tab_rp_bits;
 		uint16_t *tab_rp_registers;
-		uint16_t *tab_rp_registers_bad;
 		modbus_t *ctx;
 		int i;
 		uint8_t value;
 		int nb_points;
 		int rc;
-		float real;
-		uint32_t ireal;
-		struct timeval old_response_timeout;
-		struct timeval response_timeout;
-		int use_backend;
-		uint16_t tmp_value;
-		float float_value;
 		char interval_string[16];
 
 		ctx = modbus_new_rtu("/dev/ttyUSB0", 19200, 'N', 8, 1);
@@ -1584,6 +1722,11 @@ int main(int argc,char *argv[])
     mainpid = getpid();
 
     //register signal SIGINT handler
+    if(0 != pthread_mutex_init(&uart_mutex,NULL))
+    {
+	perror("uart_mutext init failed:");
+	return -1;
+    }
 
     if( signal(SIGINT,sig_handler) == SIG_ERR)
 	printf("failed to register SIGINT handler.\n");
@@ -1642,6 +1785,7 @@ int main(int argc,char *argv[])
 	printf("interval_init failed.\n");
 	return -1;
     }
+#if 1
     time_t rawtime;
     struct tm *info, *info_local;
 
@@ -1676,6 +1820,7 @@ int main(int argc,char *argv[])
 	perror("fail to sample timer_settime");
 	exit(-1);
     }
+#endif
     printf("sbs server\n");
 
     /*init socket file and handle*/
