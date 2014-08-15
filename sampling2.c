@@ -18,6 +18,7 @@
 #include <curl/curl.h>
 #include <uci.h>
 #include "libsocket.h"
+#include "zlog.h"
 
 #define	    xml_header		"<?xml_version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>\n<XML>\n  <action type=\"update\">"
 #define	    xml_ender		"  </action>\n</XML>"
@@ -144,6 +145,8 @@ FTP_REMOTE_URL[128] = {0};
 Interval interval;
 
 pthread_mutex_t uart_mutex;
+
+zlog_category_t *zlogcat;
 /*===========================end=======================================*/
 
 
@@ -624,18 +627,20 @@ int meter_output_prefix(void){
     if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
     {
 	strcpy(output_file_prefix,value);
-	printf("output_file_prefix is %s.\n",value);
+	zlog_debug(zlogcat,"output_file_prefix is %s.\n",value);
 	return ret;
     }
     else
     {
-	printf("failed to get output file prefix.\n");
+	zlog_err(zlogcat,"failed to get output file prefix.\n");
 	return ret;
     }
 
 }
 
 int meter_output_format(void){
+
+    zlog_info(zlogcat,"about to init meter output format.\n");
 
     char value[32] = {0};
     char string[64] = {0};
@@ -644,7 +649,7 @@ int meter_output_format(void){
     sprintf(string,"%s",UCI_GATEWAY_TYPE);
     if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
     {
-	printf("gateway type is %s.\n",value);
+	zlog_debug(zlogcat,"gateway type is %s.\n",value);
 	if(!strcmp(value,"cmep")){
 	    meter_opfm = cmep;
 	    return ret;
@@ -653,30 +658,30 @@ int meter_output_format(void){
 		sprintf(string,"%s",UCI_V2_TYPE);
 		if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
 		{
-		    printf("v2 type is %s.\n",value);
+		    zlog_debug(zlogcat,"v2 type is %s.\n",value);
 		    if(!strcmp(value,"xml"))
 		    {
-			printf("v2 type is xml\n");
+			zlog_debug(zlogcat,"v2 type is xml\n");
 			meter_opfm = xml;
 			return ret;
 		    }
 		    else if(!strcmp(value,"csv"))
 		    {
-			printf("v2 type is csv\n");
+			zlog_debug(zlogcat,"v2 type is csv\n");
 			meter_opfm = csv;
 			return ret;
 		    }
 		}
 		else
 		{
-		    printf("failed to get v2 type.\n");
+		    zlog_err(zlogcat,"failed to get v2 type.\n");
 		    return ret;
 		}
 	}
     }
     else
     {
-	printf("failed to get gateway type.\n");
+	zlog_err(zlogcat,"failed to get gateway type.\n");
 	return ret;
     }
 }
@@ -684,10 +689,11 @@ int meter_output_format(void){
 int uart_init(void)
 {
     int ret = 0;
+    zlog_info(zlogcat,"about to init uart.\n");
 
     uart_config = (UART_config *)malloc(sizeof(UART_config));
     if(uart_config == NULL){
-	printf("uart_init: failed to alloc memeory.\n");
+	zlog_err(zlogcat,"uart_init: failed to alloc memeory.\n");
 	ret = -1;
 	//goto cleanup;
     }
@@ -701,11 +707,11 @@ int uart_init(void)
     if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
     {
 	uart_config->baudrate = atoi(value);
-	printf("uart_config->baudrate is %d.\n",uart_config->baudrate);
+	zlog_debug(zlogcat,"uart_config->baudrate is %d.\n",uart_config->baudrate);
     }
     else
     {
-	printf("failed to get option:%s.\n",string);
+	zlog_err(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
     //get uart databits 
@@ -713,11 +719,11 @@ int uart_init(void)
     if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
     {
 	uart_config->databits = atoi(value);
-	printf("uart_config->databits is %d.\n",uart_config->databits);
+	zlog_debug(zlogcat,"uart_config->databits is %d.\n",uart_config->databits);
     }
     else
     {
-	printf("failed to get option:%s.\n",string);
+	zlog_err(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
     //get uart stopbits 
@@ -725,11 +731,11 @@ int uart_init(void)
     if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
     {
 	uart_config->stopbits = atoi(value);
-	printf("uart_config->stopbits is %d.\n",uart_config->stopbits);
+	zlog_debug(zlogcat,"uart_config->stopbits is %d.\n",uart_config->stopbits);
     }
     else
     {
-	printf("failed to get option:%s.\n",string);
+	zlog_err(zlogcat, "failed to get option:%s.\n",string);
 	return ret;
     }
     //get uart parity 
@@ -742,11 +748,12 @@ int uart_init(void)
 	    uart_config->parity = 'E';
 	if(!strcmp(value,"Odd"))
 	    uart_config->parity = 'O';
-	printf("uart_config->parity is %c.\n",uart_config->parity);
+
+	zlog_debug(zlogcat,"uart_config->parity is %c.\n",uart_config->parity);
     }
     else
     {
-	printf("failed to get option:%s.\n",string);
+	zlog_err(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
 	
@@ -762,7 +769,7 @@ int ftp_init(void)
 
     ftp_config = (FTP_config *)malloc(sizeof(FTP_config));
     if(ftp_config == NULL){
-	printf("ftp_init: failed to alloc memeory.\n");
+	zlog_err(zlogcat,"ftp_init: failed to alloc memeory.\n");
 	ret = -1;
 	//goto cleanup;
     }
@@ -776,11 +783,11 @@ int ftp_init(void)
     if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
     {
 	ftp_config->ftp_addr = strdup(value);
-	printf("ftp_config->ftp_addr is %s.\n",ftp_config->ftp_addr);
+	zlog_debug(zlogcat,"ftp_config->ftp_addr is %s.\n",ftp_config->ftp_addr);
     }
     else
     {
-	printf("failed to get option:%s.\n",string);
+	zlog_err("failed to get option:%s.\n",string);
 	return ret;
     }
 	
@@ -790,11 +797,11 @@ int ftp_init(void)
     if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
     {
 	ftp_config->ftp_port = strdup(value);
-	printf("ftp_config->ftp_port is %s.\n",ftp_config->ftp_port);
+	zlog_debug(zlogcat,"ftp_config->ftp_port is %s.\n",ftp_config->ftp_port);
     }
     else
     {
-	printf("failed to get option:%s.\n",string);
+	zlog_err(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
 
@@ -803,11 +810,11 @@ int ftp_init(void)
     if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
     {
 	ftp_config->ftp_user_name = strdup(value);
-	printf("ftp_config->ftp_user_name is %s.\n",ftp_config->ftp_user_name);
+	zlog_debug(zlogcat,"ftp_config->ftp_user_name is %s.\n",ftp_config->ftp_user_name);
     }
     else
     {
-	printf("failed to get option:%s.\n",string);
+	zlog_err(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
 
@@ -816,11 +823,11 @@ int ftp_init(void)
     if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
     {
 	ftp_config->ftp_password = strdup(value);
-	printf("ftp_config->ftp_password is %s.\n",ftp_config->ftp_password);
+	zlog_debug(zlogcat,"ftp_config->ftp_password is %s.\n",ftp_config->ftp_password);
     }
     else
     {
-	printf("failed to get option:%s.\n",string);
+	zlog_err(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
 
@@ -829,11 +836,11 @@ int ftp_init(void)
     if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
     {
 	ftp_config->ftp_file_path = strdup(value);
-	printf("ftp_config->ftp_file_path is %s.\n",ftp_config->ftp_file_path);
+	zlog_debug(zlogcat,"ftp_config->ftp_file_path is %s.\n",ftp_config->ftp_file_path);
     }
     else
     {
-	printf("failed to get option:%s.\n",string);
+	zlog_err(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
     
@@ -842,16 +849,18 @@ int ftp_init(void)
     if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
     {
 	ftp_config->ftp_ssl = strdup(value);
-	printf("ftp_config->ftp_ssl is %s.\n",ftp_config->ftp_ssl);
+	zlog_debug(zlogcat,"ftp_config->ftp_ssl is %s.\n",ftp_config->ftp_ssl);
     }
     else
     {
-	printf("failed to get option:%s.\n",string);
+	zlog_err(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
+
     sprintf(FTP_REMOTE_URL,"ftp://%s:%s@%s:%s/%s/",ftp_config->ftp_user_name,
 			ftp_config->ftp_password,ftp_config->ftp_addr,ftp_config->ftp_port,ftp_config->ftp_file_path);
-    printf("FTP_REMOTE_URL is %s.\n",FTP_REMOTE_URL);
+    zlog_info(zlogcat,"FTP_REMOTE_URL is %s.\n",FTP_REMOTE_URL);
+
     return ret;
 }
 /*  
@@ -870,15 +879,16 @@ int get_interval(char *interval_name, char *custom_interval_name)
     sprintf(string,"%s",interval_name);
     if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
     {
-	printf("%s is %s.\n",string,value);
+	zlog_debug(zlogcat,"%s is %s.\n",string,value);
     }
     else
     {
-	printf("failed to get option:%s.\n",string);
+	zlog_err("failed to get option:%s.\n",string);
 	return ret;
     }
 
     interval = atoi(value);
+
     if(interval){
 	return interval;
     }
@@ -886,11 +896,11 @@ int get_interval(char *interval_name, char *custom_interval_name)
 	sprintf(string,"%s",custom_interval_name);
 	if ( UCI_OK == (ret = ftp_uci_get_option(string,value)))
 	{
-	    printf("%s is %s.\n",string,value);
+	    zlog_debug(zlogcat,"%s is %s.\n",string,value);
 	}
 	else
 	{
-	    printf("failed to get option:%s.\n",string);
+	    zlog_debug(zlogcat,"failed to get option:%s.\n",string);
 	    return ret;
 	}
 
@@ -916,27 +926,30 @@ int get_upload_interval()
 
 int interval_init(Interval *interval)
 {
+    zlog_info(zlogcat,"about to init interval:sample,upload.\n");
+
     //before the create the interval timer, we need to initialize the interval first
     int ret = 0;
-    printf("about to initialize sample interval and upload interval\n");
     int value;
+
     if((value = get_sample_interval()) == -1)
     {
-	printf("get_sample_interval failed.\n");
+	zlog_err(zlogcat,"get_sample_interval failed.\n");
 	return -1;
     }
     else
 	interval->sample_interval = value;   //minutes to seconds
+
     if((value = get_upload_interval()) == -1)
     {
-	printf("get_upload_interval failed.\n");
+	zlog_err(zlogcat,"get_upload_interval failed.\n");
 	return -1;
     }
     else
 	interval->upload_interval = value;  //minutes to seconds
 
-    printf("sample interval:%d\n",interval->sample_interval);
-    printf("upload interval:%d\n\n",interval->upload_interval);
+    zlog_info(zlogcat,"sample interval:%d\n",interval->sample_interval);
+    zlog_info(zlogcat,"upload interval:%d\n\n",interval->upload_interval);
     return ret;
 }
 
@@ -954,6 +967,9 @@ void second_trans(int seconds,char *time)
 void itimer_init(struct tm *info, struct itimerspec *it_spec,int it_interval)
 {
     //int secs_interval = it_interval * SECSPERMIN;
+
+    zlog_debug(zlogcat,"about to call itimer_init.\n");
+
     int secs_interval = it_interval;
     int secs_left = 0;	
     //sample interval less than 1 hour, unit in seconds
@@ -968,7 +984,7 @@ void itimer_init(struct tm *info, struct itimerspec *it_spec,int it_interval)
     else
 	secs_left = SECSPERHOUR - (info->tm_min * SECSPERMIN + info->tm_sec);
 	
-    printf("secs_left is %d.\n",secs_left);	
+    zlog_debug(zlogcat,"secs_left is %d.\n",secs_left);	
     if(secs_left == 0)	
     {
 	it_spec->it_interval.tv_sec = secs_interval;
@@ -1007,6 +1023,9 @@ static size_t read_callback(void *ptr, size_t size, size_t nmemb, void *stream)
 //upload file funciton: upload file to user specified ftp server
 static int upload_file(char *file_to_upload, char *rename_to, char *error_str)
 {
+
+    zlog_info(zlogcat,"about to upload file:%s.\n",file_to_upload);
+
     CURL *curl;
     CURLcode res;
     FILE *hd_src;
@@ -1016,21 +1035,22 @@ static int upload_file(char *file_to_upload, char *rename_to, char *error_str)
     char remote_url[128] = {0};
 
     sprintf(remote_url,"%s%s",FTP_REMOTE_URL,rename_to);
-    printf("remote_url is %s.\n",remote_url);
+    zlog_debug(zlogcat,"remote_url is %s.\n",remote_url);
 	
     struct curl_slist *headerlist=NULL;
 
     /* get the file size of the local file */
     if(stat(file_to_upload, &file_info)) {
-	printf("Couldnt open '%s': %s\n", file_to_upload, strerror(errno));
+	zlog_err(zlogcat,"Couldnt open '%s': %s\n", file_to_upload, strerror(errno));
 	sprintf(error_str,"Couldnt open '%s': %s\n", file_to_upload, strerror(errno));
 	ret = -1;
+	zlog_err(zlogcat,"upload file:%s FAILED.\n",file_to_upload);
 	return ret;
     }
     fsize = (curl_off_t)file_info.st_size;
 				  
 	
-    printf("Local file size: %" CURL_FORMAT_CURL_OFF_T " bytes.\n", fsize);
+    zlog_debug(zlogcat,"Local file size: %" CURL_FORMAT_CURL_OFF_T " bytes.\n", fsize);
 				
     /* get a FILE * of the same file */
     hd_src = fopen(file_to_upload, "rb");
@@ -1075,7 +1095,7 @@ static int upload_file(char *file_to_upload, char *rename_to, char *error_str)
 	res = curl_easy_perform(curl);
 	/* Check for errors */
 	if(res != CURLE_OK){
-	    fprintf(stderr, "curl_easy_perform() failed: %s\n",
+	    zlog_err(zlogcat, "curl_easy_perform() failed: %s\n",
 		curl_easy_strerror(res));
 	    sprintf(error_str, "curl_easy_perform() failed: %s",
 		curl_easy_strerror(res));
@@ -1117,6 +1137,9 @@ void timer_thread_sample(union sigval v)
 
     time_t rawtime;
     struct tm *info, *info_local;
+
+    zlog_info(zlogcat,"sampling timer expire, about to sample meter datas.\n");
+
     time(&rawtime);
     /* Get GMT time */
     info = gmtime(&rawtime );
@@ -1140,13 +1163,13 @@ void timer_thread_sample(union sigval v)
 			(info_local->tm_mon + 1),info_local->tm_mday,info_local->tm_hour,
 			info_local->tm_min,info_local->tm_sec);
 
-    (void) fprintf(stderr,
+    zlog_debug(zlogcat,
 "=========================================================================\n");
-    (void) fprintf(stderr," Sampling timer expired\n");
-    (void) fprintf(stderr,"UTC: %s.\n", time_utc);
-    (void) fprintf(stderr,"LOCAL: %s.\n", time_local);
-    (void) fprintf(stderr,"LOCAL FILE: %s.\n", time_local_file);
-    (void) fprintf(stderr,
+    zlog_debug(zlogcat," Sampling timer expired\n");
+    zlog_debug(zlogcat," UTC: %s.\n", time_utc);
+    zlog_debug(zlogcat," LOCAL: %s.\n", time_local);
+    zlog_debug(zlogcat," LOCAL FILE: %s.\n", time_local_file);
+    zlog_debug(zlogcat,
 "=========================================================================\n");
 
 //*****************************sampling data**********************//
@@ -1154,6 +1177,8 @@ void timer_thread_sample(union sigval v)
     Meter *meter;
 
     int n=0;
+
+    //define as static for consistency between different sampling
     static char file_path[64];
     static char file_tmp_path[64];
     static char file_name[64];
@@ -1172,21 +1197,24 @@ void timer_thread_sample(union sigval v)
     int rc;
     char interval_string[16];
 
-    printf("thread_sample: tring to lock uart_mutex .\n");
+    zlog_debug(zlogcat,"thread_sample: tring to lock uart_mutex .\n");
+
     pthread_mutex_lock(&uart_mutex);
-    printf("thread_sample: get the uart_mutex lock.\n");
+
+    zlog_debug(zlogcat,"thread_sample: get the uart_mutex lock.\n");
 
     ctx_modbus = modbus_new_rtu("/dev/ttyUSB0", uart_config->baudrate, uart_config->parity, 
 						uart_config->databits, uart_config->stopbits);
     if (ctx_modbus == NULL) {
-	fprintf(stderr, "Unable to allocate libmodbus context\n");
+	zlog_err(zlogcat,"thread_sample: modbus_new_rtu--Unable to allocate libmodbus context\n");
 	exit -1;
     }
+
     modbus_set_debug(ctx_modbus, TRUE);
     modbus_set_error_recovery(ctx_modbus,MODBUS_ERROR_RECOVERY_LINK | MODBUS_ERROR_RECOVERY_PROTOCOL);
 
     if (modbus_connect(ctx_modbus) == -1) {
-        fprintf(stderr, "Connection failed: %s\n", modbus_strerror(errno));
+        zlog_err(zlogcat,"thread_sample: modbus_connect--Connection failed: %s\n", modbus_strerror(errno));
         modbus_free(ctx_modbus);
         exit -1;
     }
@@ -1211,9 +1239,11 @@ void timer_thread_sample(union sigval v)
 		case xml : strcpy(postfix,"xml");break;
 		case csv : strcpy(postfix,"csv");break;
 	    }
+
 	    sprintf(file_name,"%s_%s_001.%s",output_file_prefix,time_local_file,postfix);
 	    sprintf(file_path,"%s%s",METER_FILE_LOCATION,file_name);
 	    sprintf(file_tmp_path,"%s_%s_tmp",file_path,meter->meter_id);
+
 	    meter->file_path = strdup(file_path);
 	    meter->file_tmp_path = strdup(file_tmp_path);
 	    meter->file_name = strdup(file_name);
@@ -1221,19 +1251,19 @@ void timer_thread_sample(union sigval v)
 
 	    if (meter->file_path == NULL || meter->file_tmp_path == NULL || meter->file_name == NULL) 
 	    {
-		(void) fprintf(stderr,"malloc failed\n");
+		zlog_err(zlogcat,"meter->file_(path,file_tmp_path,file_name) malloc failed\n");
        		exit(-1);
 	    }
-	    (void )fprintf(stderr,"the file name is %s.\n",meter->file_name);
-	    (void )fprintf(stderr,"the file path is %s.\n",meter->file_path);
-	    (void )fprintf(stderr,"the tmp file path is %s.\n",meter->file_tmp_path);
+	    zlog_debug(zlogcat,"the file name is %s.\n",meter->file_name);
+	    zlog_debug(zlogcat,"the file path is %s.\n",meter->file_path);
+	    zlog_debug(zlogcat,"the tmp file path is %s.\n",meter->file_tmp_path);
 	}
 
-	(void )fprintf(stderr,"opening file %s.\n",meter->file_tmp_path);
+	zlog_debug(zlogcat,"opening file %s.\n",meter->file_tmp_path);
 
 	meter->file = fopen(meter->file_tmp_path,"a");			
 	if(meter->file == NULL){
-	    perror("fopen failed:");
+	    zlog_err(zlogcat,"failed to fopen %s.\n",meter->file_tmp_path);
 	    exit(-1);
 	}
 
@@ -1242,7 +1272,8 @@ void timer_thread_sample(union sigval v)
     	modbus_set_slave(ctx_modbus, meter->modbus_id);
 
 	Meter_Attribute *attribute = meter->attribute;
-	printf("attr_num is %d.\n",meter->attr_num);
+	zlog_debug(zlogcat,"attr_num is %d.\n",meter->attr_num);
+
 	for(i = 0; i < meter->attr_num && attribute; i++,attribute++){
 
 	    char attr_option[64] = {0};
@@ -1250,77 +1281,101 @@ void timer_thread_sample(union sigval v)
 	    float attr_lastvalue;
 
 	    sprintf(attr_option,"meter_lastvalue.%s.%s",meter->name,attribute->value_unit);
-	    fprintf(stderr,"attr_option is %s.\n",attr_option);
+	    zlog_debug(zlogcat,"attr_option is %s.\n",attr_option);
+
 	    ftp_uci_get_option(attr_option,option_value);
 	    attr_lastvalue = atof(option_value);
-	    printf("attr_lastvalue is %f.\n",attr_lastvalue);
+
+	    zlog_debug(zlogcat,"attr_lastvalue is %f.\n",attr_lastvalue);
 
     	    /* Single register */
-	    printf("reading register.\n");
-	    printf("addr is %d.\n",attribute->addr);
+	    zlog_debug(zlogcat,"reading register.\n");
+	    zlog_debug(zlogcat,"addr is %d.\n",attribute->addr);
+
 	    rc = modbus_read_registers(ctx_modbus,attribute->addr,attribute->reg_num,tab_rp_registers);
     	    if (rc == attribute->reg_num) 
 	    {
 
 		float attr_value;
+
 		if(!strcmp(attribute->value_type,"float")){
-		    fprintf(stderr,"attribute value_type is float.\n");
+		    zlog_debug(zlogcat,"attribute value_type is float.\n");
 		    attr_value = modbus_get_float(tab_rp_registers);
 		}
+
 		if(!strcmp(attribute->value_type,"float swap")){
-		    fprintf(stderr,"attribute value_type is float swap.\n");
+		    zlog_debug(zlogcat,"attribute value_type is float swap.\n");
 		    attr_value = modbus_get_float_cdab(tab_rp_registers);
 		}
+
 		sprintf(attr_option,"meter_lastvalue.%s.%s=%f",meter->name,attribute->value_unit,attr_value);
-		fprintf(stderr,"attr_option is %s.\n",attr_option);
+		zlog_debug(zlogcat,"attr_option is %s.\n",attr_option);
 
 		if( ret = uci_set_option(ctx_uci,attr_option) != UCI_OK){
-		   fprintf(stderr,"ret is not ok.\n");
+		   zlog_err(zlogcat,"uci_set_option failed: option is %s.\n",attr_option);
 		}
 
 		if(!strcmp(attribute->total_diff,"diff")){
-		    fprintf(stderr,"this attribute is diff.\n");
-		    fprintf(stderr,"attr_value is %f.\n",attr_value);
-		    fprintf(stderr,"attr_lastvalue is %f.\n",attr_lastvalue);
+		    zlog_debug(zlogcat,"this attribute is diff.\n");
+		    zlog_debug(zlogcat,"attr_value is %f.\n",attr_value);
+		    zlog_debug(zlogcat,"attr_lastvalue is %f.\n",attr_lastvalue);
+		    
 		    attr_value = attr_value - attr_lastvalue;
-		    fprintf(stderr,"attr_value is %f.\n",attr_value);
+
+		    zlog_debug(zlogcat,"attr_value is %f.\n",attr_value);
 		}
 		
 	        //xml
 		if(meter_opfm == xml){
-		    fprintf(stderr,"###debug3######.\n");
+
 		    fprintf(meter->file,"    <MeterData schema=\"Default\" version=\"1.0.0\">\n      <AcquistionDateTime>%s</AcquisitionDateTime>\n      <Value>%f</Value>\n      <MeterLocalId>%s</MeterLocalId>\n    </MeterData>\n",time_utc_xml,attr_value,attribute->tagid);
+
 		    fflush(meter->file);
 		}
+		//csv
 		else if(meter_opfm == csv){
-		    //csv
+		
 		    fprintf(meter->file,"%s,%f,%s\n",time_utc_csv,attr_value,attribute->tagid);
 		    fflush(meter->file);
+
 		}
 		else{
+
 		    second_trans(interval.sample_interval,interval_string);
+
 		    if(counter == 1){
-			fprintf(meter->file,"%s,%s,,%s,\"%s\\%s|%s\\%s\",%s,%s,%s,%s,%s,%d,%s,%d,%s,,%f#","MEPMD01,19970819",meter->sender_id,meter->receiver_id,meter->customer_id,meter->customer_name,meter->account_id,meter->account_name,time_local,meter->meter_id,"OK",meter->commodity,attribute->value_unit,attribute->constant,interval_string,get_upload_interval() / get_sample_interval(),time_utc,attr_value);
+
+			fprintf(meter->file,"%s,%s,,%s,\"%s\\%s|%s\\%s\",%s,%s,%s,%s,%s,%d,%s,%d,%s,,%f#",
+			"MEPMD01,19970819",meter->sender_id,meter->receiver_id,meter->customer_id,
+			meter->customer_name,meter->account_id,meter->account_name,time_local,
+			meter->meter_id,"OK",meter->commodity,attribute->value_unit,
+			attribute->constant,interval_string,
+			get_upload_interval() / get_sample_interval(),time_utc,attr_value);
+
 		    }
-		    else{	
+		    else{
+
 			if( i == meter->attr_num -1){	
 			    fprintf(meter->file,",,,%f",attr_value);
 			}
+
 			else{
 			    fprintf(meter->file,",,,%f#",attr_value);
 			}
+
 			fflush(meter->file);
 		    }
 		}
 	    }
 	    else
-		printf("FAILED (nb points %d)\n", rc);
+		zlog_err(zlogcat,"failed to read attribute register %d\n",attribute->addr);
 
 	}
+
 	if(meter_opfm == cmep)
 	    fprintf(meter->file,"\n");
 
-	(void )fprintf(stderr,"closing file %s.\n",meter->file_tmp_path);
+	zlog_debug(zlogcat,"closing file %s.\n",meter->file_tmp_path);
 	fclose(meter->file);
    
 
@@ -1328,7 +1383,7 @@ void timer_thread_sample(union sigval v)
 //******************************end of sampling data******************//
 
 
-	printf("counter is %d.\n",counter);
+	zlog_debug(zlogcat,"counter is %d.\n",counter);
 	//upload is true
 	if(upload && meter_opfm == cmep)
 	{
@@ -1337,81 +1392,81 @@ void timer_thread_sample(union sigval v)
 	    //sprintf(system_arguments,"awk '{for(i=1;i<=NF;i++){a[FNR,i]=$i}}END{for(i=1;i<=NF;i++){for(j=1;j<=FNR;j++){printf a[j,i]\" \"}print \"\"}}' %s | sed s/[[:space:]]//g > %s_new",meter->file_path,meter->file_path);
 	    sprintf(system_arguments,"awk 'BEGIN{FS=\"#\"}{for(i=1;i<=NF;i++){a[FNR,i]=$i}}END{for(i=1;i<=NF;i++){for(j=1;j<=FNR;j++){printf a[j,i]\"#\"}print \"\"}}' \"%s\" | sed s/#//g >> \"%s\"",meter->file_tmp_path,file_path);
 	    if( system(system_arguments) != 0) 
-		(void )fprintf(stderr,"system call error.\n"); 
+		zlog_err(zlogcat,"system call error:%s.\n",system_arguments); 
 
 	}
     }
     /* Free the memory */
 
-    printf("closing the modbus\n");
+    zlog_debug(zlogcat,"closing the modbus\n");
     free(tab_rp_registers);
     /* Close the connection */
     modbus_close(ctx_modbus);
     modbus_free(ctx_modbus);
-    printf("thread_sample: tring to unlock uart_mutex .\n");
+
+    zlogcat_debug(zlogcat,"thread_sample: about to unlock uart_mutex .\n");
     pthread_mutex_unlock(&uart_mutex);
 
     if(upload)
     {
-	 /*
-	 printf("######upload time######.\n");
-	 counter = 0;
-	 for (l=head; l; l=l->next)
-	 {
-	    meter = (Meter*) l->data;
-	    upload_file(meter->file_path,meter->file_name);
-	 }
-	 */
-	 printf("######upload time######.\n");
-	 counter = 0;
+	zlog_debug(zlogcat,"######upload time######.\n");
+	//setting counter back to 0
+	counter = 0;
+
 	if(meter_opfm == xml){
+	
 	    char args[128];
 	    sprintf(args,"echo \"%s\" > \"%s\"",xml_header,file_path);
-	    fprintf(stderr,"args is %s.\n",args);
+
 	    if(system(args) != 0) 
-		(void )fprintf(stderr,"system call error.\n"); 
+		zlog_err(zlogcat,"system call error:%s.\n",args); 
 	 }
 	
 	if(meter_opfm == csv){
+
 	    char args[128];
 	    sprintf(args,"echo \"%s\" > \"%s\"",csv_header,file_path);
-	    fprintf(stderr,"args is %s.\n",args);
+
 	    if(system(args) != 0) 
-		(void )fprintf(stderr,"system call error.\n"); 
+		zlog_err(zlogcat,"system call error:%s.\n",args); 
 	}
+
 	if(meter_opfm == xml || meter_opfm == csv){
 	    for (l=head; l; l=l->next)
 	    {
 		char args[64];
 		meter = (Meter*) l->data;
 		sprintf(args,"cat \"%s\" >> \"%s\"",meter->file_tmp_path,file_path);
-		fprintf(stderr,"args is %s.\n",args);
+
 		if(system(args) != 0) 
-		    (void )fprintf(stderr,"system call error.\n"); 
+		    zlog_err(zlogcat,"system call error:%s.\n",args); 
 	    }
 	}
+
 	if(meter_opfm == xml){
 	    char args[128];
 	    sprintf(args,"echo \"%s\" >> \"%s\"",xml_ender,file_path);
-	    fprintf(stderr,"args is %s.\n",args);
+
 	    if(system(args) != 0) 
-		(void )fprintf(stderr,"system call error.\n"); 
+		zlog_err(zlogcat,"system call error:%s.\n",args); 
 	 }
+
 	 char error_str[128] = {0};
-	 upload_file(file_path,file_name,error_str);
+	 if ( 0 != upload_file(file_path,file_name,error_str) )
+	    zlog_err(zlogcat,"failed to upload file:%s.\n",file_path);
     }
 }
 //CallBack
 
 int SBS_MsgProc(int SrcModuleID,int MsgType,int wParam,int lParam,char* StringParam,int len)
 {
-	int iret = 0;
-	printf("SrcModuleID=%d MessageID=%d wParam=%d lParam=%d StringParam=%s len=%d\n",
+    int iret = 0;
+    zlog_info(zlogcat,"Received: SrcModuleID=%d MessageID=%d wParam=%d lParam=%d StringParam=%s len=%d\n",
 		SrcModuleID, MsgType, wParam, lParam, StringParam, len);
     switch(MsgType)
 	{
         case MSG_SBS_REBOOT:
-	    printf("about to send SIGINT to %d.\n",mainpid);
+	    zlog_debug(zlogcat,"about to send SIGINT to %d.\n",mainpid);
 	    kill(mainpid,SIGINT);
             break;
         default:
@@ -1423,7 +1478,7 @@ int SBS_MsgProc(int SrcModuleID,int MsgType,int wParam,int lParam,char* StringPa
 
 int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,char** str, int *len)
 {
-	printf("SrcModuleID=%d MessageID=%d\n ", SrcModuleID, MessageID);
+    zlog_info(zlogcat,"Received: SrcModuleID=%d MessageID=%d\n ", SrcModuleID, MessageID);
 
     FILE *ftp_file = NULL;
     struct tm *info;
@@ -1433,7 +1488,7 @@ int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,cha
     switch(MessageID)
 	{
         case MSG_SBS_FTP_TEST:
-	    printf("receive ftp test request.\n");
+	    zlog_info(zlogcat,"receive ftp test request.\n");
 
 	    time(&raw);
 	    info = localtime(&raw);
@@ -1454,9 +1509,13 @@ int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,cha
             break; 
         case MSG_SBS_METER_STATUS:
             {
-		printf("meter_status:tring to lock uart_mutex .\n");
+		zlog_info(zlogcat,"receive meter status request.\n");
+		zlog_debug(zlogcat,"meter_status:tring to lock uart_mutex .\n");
+
 		pthread_mutex_lock(&uart_mutex);
-		printf("meter_status:get the uart_mutex lock.\n");
+
+		zlog_debug(zlogcat,"meter_status:get the uart_mutex lock.\n");
+
 		uint8_t *tab_rp_bits;
 		uint16_t *tab_rp_registers;
 		modbus_t *ctx_modbus;
@@ -1496,37 +1555,12 @@ int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,cha
 		    //get a meter
 		    meter = (Meter*) l->data;
 		    attribute = meter->attribute;
-#if 0
-		    ctx_modbus = modbus_new_rtu("/dev/ttyUSB0", uart_config->baudrate, uart_config->parity, 
-							    uart_config->databits, uart_config->stopbits);
-		    if (ctx_modbus == NULL) {
-			sprintf(str, "0|Unable to allocate libmodbus context");
-			return 0;
-		    }
-		    modbus_set_debug(ctx_modbus, TRUE);
-		    modbus_set_error_recovery(ctx_modbus,
-					    MODBUS_ERROR_RECOVERY_LINK | MODBUS_ERROR_RECOVERY_PROTOCOL);
-#endif
-		    modbus_set_slave(ctx_modbus, meter->modbus_id);
-#if 0
-		    if (modbus_connect(ctx_modbus) == -1) {
-			sprintf(str, "0|modbus Connection failed: %s", modbus_strerror(errno));
-			modbus_free(ctx_modbus);
-			return 0;
-		    }
 
-		    /* Allocate and initialize the memory to store the bits */
-		    nb_points = (UT_BITS_NB > UT_INPUT_BITS_NB) ? UT_BITS_NB : UT_INPUT_BITS_NB;
-		    tab_rp_bits = (uint8_t *) malloc(nb_points * sizeof(uint8_t));
-		    memset(tab_rp_bits, 0, nb_points * sizeof(uint8_t));
-		    /* Allocate and initialize the memory to store the bits */
-		    nb_points = (UT_BITS_NB > UT_INPUT_BITS_NB) ? UT_BITS_NB : UT_INPUT_BITS_NB;
-		    tab_rp_registers = (uint16_t *) malloc(nb_points * sizeof(uint16_t));
-		    memset(tab_rp_registers, 0, nb_points * sizeof(uint16_t));
-#endif
+		    modbus_set_slave(ctx_modbus, meter->modbus_id);
 
 		    rc = modbus_read_registers(ctx_modbus,
 				attribute->addr,attribute->reg_num,tab_rp_registers);
+
 		    if (rc == attribute->reg_num) 
 		    {
 			if(l->next)
@@ -1544,14 +1578,7 @@ int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,cha
 			strcat(str,meter_status);
 		    }
 
-#if 0	    
-		    free(tab_rp_bits);
-		    free(tab_rp_registers);
-
-		    modbus_close(ctx_modbus);
-		    modbus_free(ctx_modbus);
-#endif
-		    printf("returned str is %s.\n",str);
+		    zlog_debug(zlogcat,"returned str is %s.\n",str);
 		}
 		free(tab_rp_bits);
 		free(tab_rp_registers);
@@ -1663,7 +1690,7 @@ int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,cha
 void sig_handler(int sig_no)
 {
     if(sig_no == SIGINT)
-	printf("catch signal interrupt.\n");
+	zlog_info(zlogcat,"main thread catch signal interrupt,about to restart\n");
 }
 
 int main(int argc,char *argv[])
@@ -1671,71 +1698,95 @@ int main(int argc,char *argv[])
     //save the current pid;
     mainpid = getpid();
 
+    int zlogrc;
+
+    zlogrc = zlog_init("test_level.conf");
+    if(zlogrc)
+    {
+	printf("zlog init failed.\n");
+	return -1;
+    }
+    zlogcat = zlog_get_category("my_cat");
+    if(!zlogcat)
+    {
+	printf("failed to get zlog category.\n");
+	zlog_fini();
+	return -1;
+    }
+
+    zlog_debug(zlogcat,"hello,zlog,sampling2 - debug.\n");
+    zlog_info(zlogcat,"hello,zlog -info.\n");
+
+
+
     //register signal SIGINT handler
     if(0 != pthread_mutex_init(&uart_mutex,NULL))
     {
-	perror("uart_mutext init failed:");
+	zlog_err(zlogcat,"uart_mutext init failed.\n");
 	return -1;
     }
 
     if( signal(SIGINT,sig_handler) == SIG_ERR)
-	printf("failed to register SIGINT handler.\n");
+	zlog_err(zlogcat,"failed to register SIGINT handler.\n");
 
     if(UCI_OK != uart_init())
     {
-	printf("uart init failed.\n");
+	zlog_err(zlogcat,"uart init failed.\n");
 	return -1;
     }
     
     if(UCI_OK != ftp_init())
     {
-	printf("ftp init failed.\n");
+	zlog_err(zlogcat,"ftp init failed.\n");
 	return -1;
     }
 	
     if(UCI_OK != meter_init())
     {
-	printf("meter init failed.\n");
+	zlog_err(zlogcat,"meter init failed.\n");
 	return -1;
     }
+
+
     Sll *l;
     Meter *addr;
-    (void) fprintf(stderr,"\n---------------[ Meters printing ]----------\n");
+    zlog_debug(zlogcat,"\n---------------[ Meters printing ]----------\n");
     int n=0;
     for (l=head; l; l=l->next)
     {
         addr=(Meter*) l->data;
-    	(void) fprintf(stderr,"Node: %d\n", ++n);
-    	(void) fprintf(stderr,"  %d\n",addr->modbus_id);
+    	zlog_debug(zlogcat,"Node: %d\n", ++n);
+    	zlog_debug(zlogcat,"modbus_id:  %d\n",addr->modbus_id);
 
     	Meter_Attribute *attribute = addr->attribute;
     	int i;
     	for(i = 0; i < addr->attr_num && attribute; i++,attribute++){
-	   (void) fprintf(stderr,"  %d\n",attribute->addr);
-	   (void) fprintf(stderr,"  %d\n",attribute->reg_num);
-	   (void) fprintf(stderr,"  %d\n",attribute->constant);
-	   (void) fprintf(stderr,"  %s\n",attribute->value_type);
-	   (void) fprintf(stderr,"  %s\n",attribute->value_unit);
-	   (void) fprintf(stderr,"\n");
+	   zlog_debug(zlogcat,"  %d\n",attribute->addr);
+	   zlog_debug(zlogcat,"  %d\n",attribute->reg_num);
+	   zlog_debug(zlogcat,"  %d\n",attribute->constant);
+	   zlog_debug(zlogcat,"  %s\n",attribute->value_type);
+	   zlog_debug(zlogcat,"  %s\n",attribute->value_unit);
+	   zlog_debug(zlogcat,"\n");
    	 }
     }
+
     if(UCI_OK != meter_output_format())
     {
-	printf("meter_output_format failed.\n");
+	zlog_err(zlogcat,"failed to get meter_output_format.\n");
 	return -1;
     }
     if(UCI_OK != meter_output_prefix())
     {
-	printf("meter_output_prefix failed.\n");
+	zlog_err(zlogcat,"failed to get meter_output_prefix.\n");
 	return -1;
     }
 
     if ( 0 != interval_init(&interval) )
     {
-	printf("interval_init failed.\n");
+	zlog_err(zlogcat,"failed to get interval_init.\n");
 	return -1;
     }
-#if 1
+
     time_t rawtime;
     struct tm *info, *info_local;
 
@@ -1743,23 +1794,27 @@ int main(int argc,char *argv[])
     struct sigevent evp_sample;
     memset(&evp_sample, 0, sizeof(struct sigevent));		
 
-    evp_sample.sigev_value.sival_int = 100;			evp_sample.sigev_notify = SIGEV_THREAD;		
+    evp_sample.sigev_value.sival_int = 100;			
+    evp_sample.sigev_notify = SIGEV_THREAD;		
     evp_sample.sigev_notify_function = timer_thread_sample;		
 
     if (timer_create(CLOCKID, &evp_sample, &timerid_sample) == -1) {
-	perror("fail to sample timer_create");
+	zlog_err(zlogcat,"fail to sample timer_create");
 	exit(-1);
     }
 
     time(&rawtime);
     /* Get GMT time */
     info = gmtime(&rawtime );
-    printf("Current world clock:\n");
-    printf("UTC: %4d%02d%02d%02d%02d%02d\n\n", (info->tm_year + 1900),(info->tm_mon + 1),info->tm_mday,info->tm_hour, info->tm_min,info->tm_sec);
+    zlog_debug(zlogcat,"Current world clock:\n");
+    zlog_debug(zlogcat,"UTC: %4d%02d%02d%02d%02d%02d\n\n", (info->tm_year + 1900),
+			(info->tm_mon + 1),info->tm_mday,info->tm_hour, info->tm_min,info->tm_sec);
 
     info_local = localtime(&rawtime);
-    printf("Current local clock:\n");
-    printf("UTC: %4d%02d%02d%02d%02d%02d\n\n", (info_local->tm_year + 1900),(info_local->tm_mon + 1),info_local->tm_mday,info_local->tm_hour, info_local->tm_min,info_local->tm_sec);
+    zlog_debug(zlogcat,"Current local clock:\n");
+    zlog_debug("LOCAL: %4d%02d%02d%02d%02d%02d\n\n", (info_local->tm_year + 1900),
+			(info_local->tm_mon + 1),info_local->tm_mday,info_local->tm_hour, 
+			info_local->tm_min,info_local->tm_sec);
 	
 	   
     struct itimerspec it_sample;
@@ -1767,21 +1822,26 @@ int main(int argc,char *argv[])
     itimer_init(info,&it_sample,interval.sample_interval);
 	
     if (timer_settime(timerid_sample, 0, &it_sample, NULL) == -1) {
-	perror("fail to sample timer_settime");
+	zlog_err(zlogcat,"fail to sample timer_settime");
 	exit(-1);
     }
-#endif
-    printf("sbs server\n");
+    zlog_debug(zlogcat,"sbs communication server\n");
 
     /*init socket file and handle*/
     Init(MODULE_SERVER);
     FuncHostCallback FC;
     FC.pSBS_MsgProc=SBS_MsgProc;
     FC.pSBS_GetValue=SBS_GetValue_Proc;
-	/*register call back func*/
+    /*register call back func*/
     RegisterHostCallBack(FC);
     pause();
-    perror("pause return reason:");
+
+    zlog_debug(zlogcat,"pause return");
+
+//free memory section
+    zlog_fini();
+
+//end 
     execv(argv[0],argv);
     Clear(MODULE_SERVER);
 	

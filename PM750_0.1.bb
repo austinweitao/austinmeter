@@ -16,6 +16,7 @@ SRC_URI = "file://timer2.c \
 	   file://append.c  \
 	   file://sampling.c  \
 	   file://sampling1.c  \
+	   file://sampling2.c  \
 	   file://demo.c  \
 	   file://libsocket.c \ 
 	   file://libsocket.h \
@@ -24,6 +25,7 @@ SRC_URI = "file://timer2.c \
 	   file://unsock.h \
 	   file://unsock.c \
 	   file://pm1200_test.c \
+	   file://zlog.h \
           "
 
 S = "${WORKDIR}"
@@ -33,6 +35,7 @@ do_compile() {
   ${CC} ${CFLAGS} -o pm1200_test pm1200_test.c -lmodbus -lrt -lcurl
   ${CC} ${CFLAGS} -o sampling sampling.c sbslog.c sll.c unsock.c libsocket.c -lpthread -lmodbus -lrt -lcurl -luci
   ${CC} ${CFLAGS} -o sampling1 sampling1.c sbslog.c sll.c unsock.c libsocket.c -lpthread -lmodbus -lrt -lcurl -luci
+  ${CC} ${CFLAGS} -o sampling2 sampling2.c sbslog.c sll.c unsock.c libsocket.c -lpthread -lmodbus -lrt -lcurl -luci -lzlog
   ${CC} ${CFLAGS} -o append append.c sll.c -luci
   ${CC} ${CFLAGS} -o ftpupload ftpupload.c -lcurl
   ${CC} ${CFLAGS} -o uci_test uci_test.c -luci
@@ -47,6 +50,7 @@ do_install() {
   install -m 0755 pm1200_test ${D}${bindir}
   install -m 0755 sampling ${D}${bindir}
   install -m 0755 sampling1 ${D}${bindir}
+  install -m 0755 sampling2 ${D}${bindir}
   install -m 0755 ftpupload ${D}${bindir}
   install -m 0755 append ${D}${bindir}
   install -m 0755 uci_test ${D}${bindir}
