@@ -174,13 +174,13 @@ static int ftp_uci_get_option(char *option, char *value)
 
 	if(!ctx_uci)
 	{
-	    printf("failed to alloc uci context.\n");
+	    zlog_error(zlogcat,"in ftp_uci_get_option:failed to alloc uci context:%s\n",option);
 	    return -1;	    
 	}
 
 	if ((ret = uci_lookup_ptr(ctx_uci,&ptr_uci,option,true)) != UCI_OK) 
 	{ 
-	    printf("lookup_ptr failed.\n");
+	    zlog_error(zlogcat,"in ftp_uci_get_option:lookup_ptr failed:%s\n",option);
 	    goto cleanup;
 	}
 
@@ -239,20 +239,20 @@ static int uci_set_option(struct uci_context *ctx_uci, char *string)
 	int ret = UCI_OK;
 	struct uci_ptr ptr;
 
-	printf("string is %s.\n",string);
+	zlog_debug(zlogcat,"uci_set_option:string is %s.\n",string);
 
 	if ((ret = uci_lookup_ptr(ctx_uci, &ptr,string, true)) != UCI_OK) 
 	{ 
-	    printf("lookup_ptr failed.\n");
+	    zlog_error(zlogcat,"in uci_set_option:lookup_ptr failed:%s\n",string);
 	    return ret;
 	}
 	ret = uci_set(ctx_uci, &ptr);
 	if (ret != UCI_OK){
-		fprintf(stderr,"uci_set failed.\n");
+		zlog_error(zlogcat,"in uci_set_option:uci_set failed:%s\n",string);
 		return ret;
 	}
 	if ( UCI_OK != (ret = uci_commit(ctx_uci, &ptr.p, false))) {
-	    printf("uci_set_option:uci commit failed.\n");
+	    zlog_error(zlogcat,"in uci_set_option:uci_commit failed:%s\n",string);
 	    return ret;
 	}
 	return ret;
@@ -269,35 +269,35 @@ static int uci_do_add(struct uci_context *ctx,struct uci_package *pkg,char *sect
 	ret = uci_add_section(ctx, pkg, section_type, &s);
 
 	if (ret != UCI_OK){
-		fprintf(stderr,"add  section failed.\n");
+		zlog_error(zlogcat,"add  section failed.\n");
 		return ret;
 	}
-	printf("section's name is %s.\n",s->e.name);
+	zlog_debug(zlogcat,"section's name is %s.\n",s->e.name);
 	char ptr_str[64] = {0};
 	sprintf(ptr_str,"meter_lastvalue.%s",s->e.name);
 
 	if ( (ret = uci_lookup_ptr(ctx, &ptr, ptr_str, true)) != UCI_OK) 
 	{ 
-	    printf("uci_lookup_ptr failed:%s.\n",ptr_str);
+	    zlog_error(zlogcat,"in uci_do_add:uci_lookup_ptr failed:%s.\n",ptr_str);
 	    return ret;
 	}
-	printf("ptr's package is %s.\n",ptr.package);
-	printf("ptr's section is %s.\n",ptr.section);
-	printf("ptr's option is %s.\n",ptr.option);
+	zlog_debug(zlogcat,"ptr's package is %s.\n",ptr.package);
+	zlog_debug(zlogcat,"ptr's section is %s.\n",ptr.section);
+	zlog_debug(zlogcat,"ptr's option is %s.\n",ptr.option);
 
 	ptr.value = strdup(meter->name);
 
 	if ((ret = uci_rename(ctx,&ptr) != UCI_OK))
 	{
-	    fprintf(stderr,"uci_rename failed.\n");
+	    zlog_error(zlogcat,"in uci_do_add uci_rename failed.\n");
 	    return ret;
 	}
 
 	sprintf(ptr_str,"meter_lastvalue.%s.modbus_id=%d",s->e.name,meter->modbus_id);
-	printf("ptr_str is %s.\n",ptr_str);
+	zlog_debug(zlogcat,"ptr_str is %s.\n",ptr_str);
 
 	if( ret = uci_set_option(ctx,ptr_str) != UCI_OK){
-		fprintf(stderr,"uci_set_option failed:%s.\n",ptr_str);
+		zlog_error(zlogcat,"in uci_do_add: uci_set_option failed:%s.\n",ptr_str);
 		return ret;
 	}
 
@@ -307,10 +307,10 @@ static int uci_do_add(struct uci_context *ctx,struct uci_package *pkg,char *sect
 	for(i = 0; i < meter->attr_num; i++,attribute++)
 	{
 	    sprintf(ptr_str,"meter_lastvalue.%s.%s=%d",s->e.name,attribute->value_unit,0);
-	    printf("ptr_str is %s.\n",ptr_str);
+	    zlog_debug(zlogcat,"ptr_str is %s.\n",ptr_str);
 
 	    if( ret = uci_set_option(ctx,ptr_str) != UCI_OK){
-		fprintf(stderr,"uci_set_option failed:%s.\n",ptr_str);
+		zlog_error(stderr,"uci_set_option failed:%s.\n",ptr_str);
 		return ret;
 	    }
 	
@@ -355,13 +355,13 @@ int load_meter_lastvalue_config()
 
 	    if(!strcmp("meter_lastvalue",s->type))
 	    {
-		printf("section s's type is meter_lastvalue\n");
+		zlog_debug(zlogcat,"section s's type is meter_lastvalue\n");
 		if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "modbus_id"))) 
 		{
 		    modbus_id = atoi(value);
 		    if ( meter->modbus_id ==  modbus_id){
 			flag = 1; 
-			printf("found a section belonging to the meter.\n");
+			zlog_debug(zlogcat,"found a section belonging to the meter.\n");
 		    }
 		}
 					
@@ -369,10 +369,10 @@ int load_meter_lastvalue_config()
 	}
 	if(flag == 0)   //no seciton belongs to the current meter
 	{
-	    printf("currently no section belongs to the meter, create a new section.\n");
+	    zlog_debug(zlogcat,"currently no section belongs to the meter, create a new section.\n");
 	    if ( UCI_OK != (ret = uci_do_add(ctx_uci,pkg,"meter_lastvalue",meter)))
 	    {
-		fprintf(stderr,"uci do add failed.\n");
+		zlog_error(zlogcat,"in load_meter_lastvalue: uci do add failed.\n");
 		goto cleanup;
 	    }
 	}
@@ -383,7 +383,7 @@ cleanup:
     ctx_uci = NULL;
     return ret;
 }
-int load_attr_config()
+int load_attr_config(char *meter_uci_config_file)
 {
     struct uci_package * pkg = NULL;
     struct uci_element *e;
@@ -396,7 +396,7 @@ int load_attr_config()
 
 
     ctx_uci = uci_alloc_context(); 
-    if (UCI_OK != uci_load(ctx_uci, METER_UCI_CONFIG_FILE, &pkg)){
+    if (UCI_OK != uci_load(ctx_uci, meter_uci_config_file, &pkg)){
 	ret = -1;
         goto cleanup; 
     }
@@ -406,7 +406,7 @@ int load_attr_config()
     {
     	struct uci_section *s = uci_to_section(e);
 	
-	printf("section s's type is %s.\n",s->type);
+	zlog_debug(zlogcat,"section s's type is %s.\n",s->type);
 
 	if(!strcmp("attr",s->type))
 	{
@@ -426,37 +426,37 @@ int load_attr_config()
 			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "addr")))
 			{
 				meter->current_attr->addr = atoi(value); 
-				printf(" attr addr is  %d.\n",meter->current_attr->addr);
+				zlog_debug(zlogcat," attr addr is  %d.\n",meter->current_attr->addr);
 			}
 			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "reg_num")))
 			{
 				meter->current_attr->reg_num = atoi(value); 
-				printf(" reg num  is  %d.\n",meter->current_attr->reg_num);
+				zlog_debug(zlogcat," reg num  is  %d.\n",meter->current_attr->reg_num);
 			}
 			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "constant")))
 			{
 				meter->current_attr->constant = atoi(value); 
-				printf(" constant  is  %d.\n",meter->current_attr->constant);
+				zlog_debug(zlogcat," constant  is  %d.\n",meter->current_attr->constant);
 			}
 			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "value_type")))
 			{
 				meter->current_attr->value_type = strdup(value); 
-				printf(" value_type  is  %s.\n",meter->current_attr->value_type);
+				zlog_debug(zlogcat," value_type  is  %s.\n",meter->current_attr->value_type);
 			}
 			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "value_unit")))
 			{
 				meter->current_attr->value_unit = strdup(value); 
-				printf(" value_unit  is  %s.\n",meter->current_attr->value_unit);
+				zlog_debug(zlogcat," value_unit  is  %s.\n",meter->current_attr->value_unit);
 			}
 			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "total_diff")))
 			{
 				meter->current_attr->total_diff = strdup(value); 
-				printf(" total_diff is %s.\n",meter->current_attr->total_diff);
+				zlog_debug(zlogcat," total_diff is %s.\n",meter->current_attr->total_diff);
 			}
 			if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "tagid")))
 			{
 				meter->current_attr->tagid = strdup(value); 
-				printf(" tagid is %s.\n",meter->current_attr->tagid);
+				zlog_debug(zlogcat," tagid is %s.\n",meter->current_attr->tagid);
 			}
 						
 			meter->current_attr++;
@@ -474,7 +474,7 @@ cleanup:
     return ret;
 }
 
-int load_meter_config()
+int load_meter_config(char *meter_uci_config_file)
 {
     Sll *l,*new=NULL;
     Meter *meter;
@@ -484,66 +484,67 @@ int load_meter_config()
     struct uci_package *pkg = NULL;
     struct uci_element *e;
     const char *value;
+    int meter_enable_flag = 0;
 
 
     ctx_uci = uci_alloc_context(); 
-    if (UCI_OK != (ret = uci_load(ctx_uci, METER_UCI_CONFIG_FILE, &pkg))){
-	printf("meter_config error.\n");
+    if (UCI_OK != (ret = uci_load(ctx_uci, meter_uci_config_file, &pkg))){
+	zlog_error(zlogcat,"failed to load meter_uci_config_file.\n");
         goto cleanup; 
     }
-    printf("############meter_config#############.\n");
 
 
     uci_foreach_element(&pkg->sections, e)
     {
         struct uci_section *s = uci_to_section(e);
 	
-	printf("section s's type is %s.\n",s->type);
+	zlog_debug(zlogcat,"section s's type is %s.\n",s->type);
 
 	if(!strcmp("meter",s->type)) //this section is a meter
 	{
 
 	    //find a meter section, allocate a new meter;
-	    printf("this seciton is a meter.\n");
+	    zlog_debug(zlogcat,"this seciton is a meter.\n");
 	    if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "status")))
 	    {
 		if(!strcmp(value,"enable"))
 		{
-		    printf("this meter seciton is enabled.\n");
+		    meter_enable_flag = 1;
+		    zlog_debug(zlogcat,"this meter seciton is enabled.\n");
 		
 		    meter = (Meter*) malloc(sizeof(Meter));
 		    if (meter == NULL)
 		    {
-			(void) fprintf(stderr,"meter malloc failed\n");
+			zlog_error(zlogcat,"in load_meter_config: meter malloc failed\n");
 			ret = -1;
 			goto cleanup;
 		    }
 
-		    (void) fprintf(stderr,"\n---------------[ appending ]----------\n");
+		    zlog_debug(zlogcat,"\n---------------[ appending ]----------\n");
 		    new=allocateNode((void *) meter);
 		    appendNode(&head,&new);
 
-		    //initialize meter
-		    if(s->anonymous == false )
-		    {
-			meter->name = strdup(s->e.name);
-			printf(" meter name is  %s.\n",meter->name);
-		    }
 
 		    if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "modbus_id")))
 		    {
+			char metername[32] = {0};
 			meter->modbus_id = atoi(value); 
-			printf(" modbus_id is %d.\n",meter->modbus_id);
+			zlog_debug(zlogcat," modbus_id is %d.\n",meter->modbus_id);
+
+			sprintf(metername,"meter_%d",meter->modbus_id);
+			meter->name = strdup(metername);
+			zlog_debug(zlogcat," meter name is %s.\n",meter->name);
 		    }
 		    if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "attr_num")))
 		    {
 			meter->attr_num = atoi(value); 
-			printf(" attr_num is %d.\n",meter->attr_num);
+			zlog_debug(zlogcat," attr_num is %d.\n",meter->attr_num);
+
 			//should verify the existance of option attr_num before alloc memory for attr
 			meter->attribute = (Meter_Attribute *) malloc(meter->attr_num * sizeof(Meter_Attribute));
 			if(meter->attribute == NULL)
 			{
-			    (void)fprintf(stderr," Attribute:malloc failed\n");
+			    zlog_error(zlogcat,"in load_meter_config: Attribute:malloc failed\n");
 			    destroyNodes(&head,freeData);
 			    ret = -1;
 			    goto cleanup;
@@ -552,48 +553,105 @@ int load_meter_config()
 		    if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "sender_id")))
 		    {
 			meter->sender_id = strdup(value); 
-			printf(" sender_id is %s.\n",meter->sender_id);
+			zlog_debug(zlogcat," sender_id is %s.\n",meter->sender_id);
 		    }
 		    if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "receiver_id")))
 		    {
 			meter->receiver_id = strdup(value); 
-			printf(" receiver_id is %s.\n",meter->receiver_id);
+			zlog_debug(zlogcat," receiver_id is %s.\n",meter->receiver_id);
 		    }
 		    if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "customer_id")))
 		    {
 			meter->customer_id = strdup(value); 
-			printf(" customer_id is %s.\n",meter->customer_id);
+			zlog_debug(zlogcat," customer_id is %s.\n",meter->customer_id);
 		    }
 		    if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "customer_name")))
 		    {
 			meter->customer_name = strdup(value); 
-			printf(" customer_name is %s.\n",meter->customer_name);
+			zlog_debug(zlogcat," customer_name is %s.\n",meter->customer_name);
 		    }
 		    if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "account_id")))
 		    {
 			meter->account_id = strdup(value); 
-			printf(" account_id is %s.\n",meter->account_id);
+			zlog_debug(zlogcat," account_id is %s.\n",meter->account_id);
 		    }
 		    if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "account_name")))
 		    {
 			meter->account_name = strdup(value); 
-			printf(" account_name is %s.\n",meter->account_name);
+			zlog_debug(zlogcat," account_name is %s.\n",meter->account_name);
 		    }
 		    if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "meter_id")))
 		    {
 			meter->meter_id = strdup(value); 
-			printf(" meter_id is %s.\n",meter->meter_id);
+			zlog_debug(zlogcat," meter_id is %s.\n",meter->meter_id);
 		    }
 		    if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "commodity")))
 		    {
 			meter->commodity = strdup(value); 
-			printf(" commodity is %s.\n",meter->commodity);
+			zlog_debug(zlogcat," commodity is %s.\n",meter->commodity);
 		    }
 
 		    meter->current_attr = meter->attribute;
 		}
 		else
-		    printf("this meter section is disabled.\n");
+		    zlog_debug(zlogcat,"this meter section is disabled.\n");
+	    }
+
+	}
+    }
+
+
+
+    //try to get meter attribute only when this meter is enabled
+    if(meter_enable_flag)
+    {
+	uci_foreach_element(&pkg->sections, e)
+	{
+	    struct uci_section *s = uci_to_section(e);
+	    
+	    zlog_debug(zlogcat,"section s's type is %s.\n",s->type);
+
+	    if(!strcmp("attr",s->type))
+	    {
+		if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "addr")))
+		{
+			meter->current_attr->addr = atoi(value); 
+			zlog_debug(zlogcat," attr addr is  %d.\n",meter->current_attr->addr);
+		}
+		if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "reg_num")))
+		{
+			meter->current_attr->reg_num = atoi(value); 
+			zlog_debug(zlogcat," reg num  is  %d.\n",meter->current_attr->reg_num);
+		}
+		if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "constant")))
+		{
+			meter->current_attr->constant = atoi(value); 
+			zlog_debug(zlogcat," constant  is  %d.\n",meter->current_attr->constant);
+		}
+		if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "value_type")))
+		{
+			meter->current_attr->value_type = strdup(value); 
+			zlog_debug(zlogcat," value_type  is  %s.\n",meter->current_attr->value_type);
+		}
+		if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "value_unit")))
+		{
+			meter->current_attr->value_unit = strdup(value); 
+			zlog_debug(zlogcat," value_unit  is  %s.\n",meter->current_attr->value_unit);
+		}
+		if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "total_diff")))
+		{
+			meter->current_attr->total_diff = strdup(value); 
+			zlog_debug(zlogcat," total_diff is %s.\n",meter->current_attr->total_diff);
+		}
+		if (NULL != (value = uci_lookup_option_string(ctx_uci, s, "tagid")))
+		{
+			meter->current_attr->tagid = strdup(value); 
+			zlog_debug(zlogcat," tagid is %s.\n",meter->current_attr->tagid);
+		}
+					
+		meter->current_attr++;
+		
+
 	    }
 
 	}
@@ -608,10 +666,22 @@ cleanup:
 int meter_init(void)
 {
     int ret = UCI_OK;
-    if (UCI_OK != (ret = load_meter_config()))
-	return ret;
-    if (UCI_OK != (ret = load_attr_config()))
-	return ret;
+
+    char meter_config_file[64] = {0};
+    int i = 32;
+
+    for(i = 1; i <=32; i++)
+    {
+	sprintf(meter_config_file,"/etc/config/meter%d",i);
+	zlog_debug(zlogcat,"meter config file is %s.\n",meter_config_file);
+
+	if (UCI_OK != (ret = load_meter_config(meter_config_file)))
+	{
+	    zlog_error(zlogcat,"load_meter_config failed:%s.\n",meter_config_file);
+	    return ret;
+	}
+    }
+    
     if (UCI_OK != (ret = load_meter_lastvalue_config()))
 	return ret;
     return ret;
@@ -632,7 +702,7 @@ int meter_output_prefix(void){
     }
     else
     {
-	zlog_err(zlogcat,"failed to get output file prefix.\n");
+	zlog_error(zlogcat,"failed to get output file prefix.\n");
 	return ret;
     }
 
@@ -674,14 +744,14 @@ int meter_output_format(void){
 		}
 		else
 		{
-		    zlog_err(zlogcat,"failed to get v2 type.\n");
+		    zlog_error(zlogcat,"failed to get v2 type.\n");
 		    return ret;
 		}
 	}
     }
     else
     {
-	zlog_err(zlogcat,"failed to get gateway type.\n");
+	zlog_error(zlogcat,"failed to get gateway type.\n");
 	return ret;
     }
 }
@@ -693,7 +763,7 @@ int uart_init(void)
 
     uart_config = (UART_config *)malloc(sizeof(UART_config));
     if(uart_config == NULL){
-	zlog_err(zlogcat,"uart_init: failed to alloc memeory.\n");
+	zlog_error(zlogcat,"uart_init: failed to alloc memeory.\n");
 	ret = -1;
 	//goto cleanup;
     }
@@ -711,7 +781,7 @@ int uart_init(void)
     }
     else
     {
-	zlog_err(zlogcat,"failed to get option:%s.\n",string);
+	zlog_error(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
     //get uart databits 
@@ -723,7 +793,7 @@ int uart_init(void)
     }
     else
     {
-	zlog_err(zlogcat,"failed to get option:%s.\n",string);
+	zlog_error(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
     //get uart stopbits 
@@ -735,7 +805,7 @@ int uart_init(void)
     }
     else
     {
-	zlog_err(zlogcat, "failed to get option:%s.\n",string);
+	zlog_error(zlogcat, "failed to get option:%s.\n",string);
 	return ret;
     }
     //get uart parity 
@@ -753,7 +823,7 @@ int uart_init(void)
     }
     else
     {
-	zlog_err(zlogcat,"failed to get option:%s.\n",string);
+	zlog_error(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
 	
@@ -769,7 +839,7 @@ int ftp_init(void)
 
     ftp_config = (FTP_config *)malloc(sizeof(FTP_config));
     if(ftp_config == NULL){
-	zlog_err(zlogcat,"ftp_init: failed to alloc memeory.\n");
+	zlog_error(zlogcat,"ftp_init: failed to alloc memeory.\n");
 	ret = -1;
 	//goto cleanup;
     }
@@ -787,7 +857,7 @@ int ftp_init(void)
     }
     else
     {
-	zlog_err("failed to get option:%s.\n",string);
+	zlog_error("failed to get option:%s.\n",string);
 	return ret;
     }
 	
@@ -801,7 +871,7 @@ int ftp_init(void)
     }
     else
     {
-	zlog_err(zlogcat,"failed to get option:%s.\n",string);
+	zlog_error(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
 
@@ -814,7 +884,7 @@ int ftp_init(void)
     }
     else
     {
-	zlog_err(zlogcat,"failed to get option:%s.\n",string);
+	zlog_error(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
 
@@ -827,7 +897,7 @@ int ftp_init(void)
     }
     else
     {
-	zlog_err(zlogcat,"failed to get option:%s.\n",string);
+	zlog_error(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
 
@@ -840,7 +910,7 @@ int ftp_init(void)
     }
     else
     {
-	zlog_err(zlogcat,"failed to get option:%s.\n",string);
+	zlog_error(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
     
@@ -853,7 +923,7 @@ int ftp_init(void)
     }
     else
     {
-	zlog_err(zlogcat,"failed to get option:%s.\n",string);
+	zlog_error(zlogcat,"failed to get option:%s.\n",string);
 	return ret;
     }
 
@@ -883,7 +953,7 @@ int get_interval(char *interval_name, char *custom_interval_name)
     }
     else
     {
-	zlog_err("failed to get option:%s.\n",string);
+	zlog_error("failed to get option:%s.\n",string);
 	return ret;
     }
 
@@ -934,7 +1004,7 @@ int interval_init(Interval *interval)
 
     if((value = get_sample_interval()) == -1)
     {
-	zlog_err(zlogcat,"get_sample_interval failed.\n");
+	zlog_error(zlogcat,"get_sample_interval failed.\n");
 	return -1;
     }
     else
@@ -942,7 +1012,7 @@ int interval_init(Interval *interval)
 
     if((value = get_upload_interval()) == -1)
     {
-	zlog_err(zlogcat,"get_upload_interval failed.\n");
+	zlog_error(zlogcat,"get_upload_interval failed.\n");
 	return -1;
     }
     else
@@ -1041,10 +1111,10 @@ static int upload_file(char *file_to_upload, char *rename_to, char *error_str)
 
     /* get the file size of the local file */
     if(stat(file_to_upload, &file_info)) {
-	zlog_err(zlogcat,"Couldnt open '%s': %s\n", file_to_upload, strerror(errno));
+	zlog_error(zlogcat,"Couldnt open '%s': %s\n", file_to_upload, strerror(errno));
 	sprintf(error_str,"Couldnt open '%s': %s\n", file_to_upload, strerror(errno));
 	ret = -1;
-	zlog_err(zlogcat,"upload file:%s FAILED.\n",file_to_upload);
+	zlog_error(zlogcat,"upload file:%s FAILED.\n",file_to_upload);
 	return ret;
     }
     fsize = (curl_off_t)file_info.st_size;
@@ -1095,7 +1165,7 @@ static int upload_file(char *file_to_upload, char *rename_to, char *error_str)
 	res = curl_easy_perform(curl);
 	/* Check for errors */
 	if(res != CURLE_OK){
-	    zlog_err(zlogcat, "curl_easy_perform() failed: %s\n",
+	    zlog_error(zlogcat, "curl_easy_perform() failed: %s\n",
 		curl_easy_strerror(res));
 	    sprintf(error_str, "curl_easy_perform() failed: %s",
 		curl_easy_strerror(res));
@@ -1206,7 +1276,7 @@ void timer_thread_sample(union sigval v)
     ctx_modbus = modbus_new_rtu("/dev/ttyUSB0", uart_config->baudrate, uart_config->parity, 
 						uart_config->databits, uart_config->stopbits);
     if (ctx_modbus == NULL) {
-	zlog_err(zlogcat,"thread_sample: modbus_new_rtu--Unable to allocate libmodbus context\n");
+	zlog_error(zlogcat,"thread_sample: modbus_new_rtu--Unable to allocate libmodbus context\n");
 	exit -1;
     }
 
@@ -1214,7 +1284,7 @@ void timer_thread_sample(union sigval v)
     modbus_set_error_recovery(ctx_modbus,MODBUS_ERROR_RECOVERY_LINK | MODBUS_ERROR_RECOVERY_PROTOCOL);
 
     if (modbus_connect(ctx_modbus) == -1) {
-        zlog_err(zlogcat,"thread_sample: modbus_connect--Connection failed: %s\n", modbus_strerror(errno));
+        zlog_error(zlogcat,"thread_sample: modbus_connect--Connection failed: %s\n", modbus_strerror(errno));
         modbus_free(ctx_modbus);
         exit -1;
     }
@@ -1251,7 +1321,7 @@ void timer_thread_sample(union sigval v)
 
 	    if (meter->file_path == NULL || meter->file_tmp_path == NULL || meter->file_name == NULL) 
 	    {
-		zlog_err(zlogcat,"meter->file_(path,file_tmp_path,file_name) malloc failed\n");
+		zlog_error(zlogcat,"meter->file_(path,file_tmp_path,file_name) malloc failed\n");
        		exit(-1);
 	    }
 	    zlog_debug(zlogcat,"the file name is %s.\n",meter->file_name);
@@ -1263,7 +1333,7 @@ void timer_thread_sample(union sigval v)
 
 	meter->file = fopen(meter->file_tmp_path,"a");			
 	if(meter->file == NULL){
-	    zlog_err(zlogcat,"failed to fopen %s.\n",meter->file_tmp_path);
+	    zlog_error(zlogcat,"failed to fopen %s.\n",meter->file_tmp_path);
 	    exit(-1);
 	}
 
@@ -1312,7 +1382,7 @@ void timer_thread_sample(union sigval v)
 		zlog_debug(zlogcat,"attr_option is %s.\n",attr_option);
 
 		if( ret = uci_set_option(ctx_uci,attr_option) != UCI_OK){
-		   zlog_err(zlogcat,"uci_set_option failed: option is %s.\n",attr_option);
+		   zlog_error(zlogcat,"uci_set_option failed: option is %s.\n",attr_option);
 		}
 
 		if(!strcmp(attribute->total_diff,"diff")){
@@ -1368,7 +1438,7 @@ void timer_thread_sample(union sigval v)
 		}
 	    }
 	    else
-		zlog_err(zlogcat,"failed to read attribute register %d\n",attribute->addr);
+		zlog_error(zlogcat,"failed to read attribute register %d\n",attribute->addr);
 
 	}
 
@@ -1392,7 +1462,7 @@ void timer_thread_sample(union sigval v)
 	    //sprintf(system_arguments,"awk '{for(i=1;i<=NF;i++){a[FNR,i]=$i}}END{for(i=1;i<=NF;i++){for(j=1;j<=FNR;j++){printf a[j,i]\" \"}print \"\"}}' %s | sed s/[[:space:]]//g > %s_new",meter->file_path,meter->file_path);
 	    sprintf(system_arguments,"awk 'BEGIN{FS=\"#\"}{for(i=1;i<=NF;i++){a[FNR,i]=$i}}END{for(i=1;i<=NF;i++){for(j=1;j<=FNR;j++){printf a[j,i]\"#\"}print \"\"}}' \"%s\" | sed s/#//g >> \"%s\"",meter->file_tmp_path,file_path);
 	    if( system(system_arguments) != 0) 
-		zlog_err(zlogcat,"system call error:%s.\n",system_arguments); 
+		zlog_error(zlogcat,"system call error:%s.\n",system_arguments); 
 
 	}
     }
@@ -1404,7 +1474,7 @@ void timer_thread_sample(union sigval v)
     modbus_close(ctx_modbus);
     modbus_free(ctx_modbus);
 
-    zlogcat_debug(zlogcat,"thread_sample: about to unlock uart_mutex .\n");
+    zlog_debug(zlogcat,"thread_sample: about to unlock uart_mutex .\n");
     pthread_mutex_unlock(&uart_mutex);
 
     if(upload)
@@ -1419,7 +1489,7 @@ void timer_thread_sample(union sigval v)
 	    sprintf(args,"echo \"%s\" > \"%s\"",xml_header,file_path);
 
 	    if(system(args) != 0) 
-		zlog_err(zlogcat,"system call error:%s.\n",args); 
+		zlog_error(zlogcat,"system call error:%s.\n",args); 
 	 }
 	
 	if(meter_opfm == csv){
@@ -1428,7 +1498,7 @@ void timer_thread_sample(union sigval v)
 	    sprintf(args,"echo \"%s\" > \"%s\"",csv_header,file_path);
 
 	    if(system(args) != 0) 
-		zlog_err(zlogcat,"system call error:%s.\n",args); 
+		zlog_error(zlogcat,"system call error:%s.\n",args); 
 	}
 
 	if(meter_opfm == xml || meter_opfm == csv){
@@ -1439,7 +1509,7 @@ void timer_thread_sample(union sigval v)
 		sprintf(args,"cat \"%s\" >> \"%s\"",meter->file_tmp_path,file_path);
 
 		if(system(args) != 0) 
-		    zlog_err(zlogcat,"system call error:%s.\n",args); 
+		    zlog_error(zlogcat,"system call error:%s.\n",args); 
 	    }
 	}
 
@@ -1448,12 +1518,12 @@ void timer_thread_sample(union sigval v)
 	    sprintf(args,"echo \"%s\" >> \"%s\"",xml_ender,file_path);
 
 	    if(system(args) != 0) 
-		zlog_err(zlogcat,"system call error:%s.\n",args); 
+		zlog_error(zlogcat,"system call error:%s.\n",args); 
 	 }
 
 	 char error_str[128] = {0};
 	 if ( 0 != upload_file(file_path,file_name,error_str) )
-	    zlog_err(zlogcat,"failed to upload file:%s.\n",file_path);
+	    zlog_error(zlogcat,"failed to upload file:%s.\n",file_path);
     }
 }
 //CallBack
@@ -1722,28 +1792,28 @@ int main(int argc,char *argv[])
     //register signal SIGINT handler
     if(0 != pthread_mutex_init(&uart_mutex,NULL))
     {
-	zlog_err(zlogcat,"uart_mutext init failed.\n");
+	zlog_error(zlogcat,"uart_mutext init failed.\n");
 	return -1;
     }
 
     if( signal(SIGINT,sig_handler) == SIG_ERR)
-	zlog_err(zlogcat,"failed to register SIGINT handler.\n");
+	zlog_error(zlogcat,"failed to register SIGINT handler.\n");
 
     if(UCI_OK != uart_init())
     {
-	zlog_err(zlogcat,"uart init failed.\n");
+	zlog_error(zlogcat,"uart init failed.\n");
 	return -1;
     }
     
     if(UCI_OK != ftp_init())
     {
-	zlog_err(zlogcat,"ftp init failed.\n");
+	zlog_error(zlogcat,"ftp init failed.\n");
 	return -1;
     }
 	
     if(UCI_OK != meter_init())
     {
-	zlog_err(zlogcat,"meter init failed.\n");
+	zlog_error(zlogcat,"meter init failed.\n");
 	return -1;
     }
 
@@ -1772,20 +1842,22 @@ int main(int argc,char *argv[])
 
     if(UCI_OK != meter_output_format())
     {
-	zlog_err(zlogcat,"failed to get meter_output_format.\n");
+	zlog_error(zlogcat,"failed to get meter_output_format.\n");
 	return -1;
     }
     if(UCI_OK != meter_output_prefix())
     {
-	zlog_err(zlogcat,"failed to get meter_output_prefix.\n");
+	zlog_error(zlogcat,"failed to get meter_output_prefix.\n");
 	return -1;
     }
 
     if ( 0 != interval_init(&interval) )
     {
-	zlog_err(zlogcat,"failed to get interval_init.\n");
+	zlog_error(zlogcat,"failed to get interval_init.\n");
 	return -1;
     }
+
+#if 1
 
     time_t rawtime;
     struct tm *info, *info_local;
@@ -1799,7 +1871,7 @@ int main(int argc,char *argv[])
     evp_sample.sigev_notify_function = timer_thread_sample;		
 
     if (timer_create(CLOCKID, &evp_sample, &timerid_sample) == -1) {
-	zlog_err(zlogcat,"fail to sample timer_create");
+	zlog_error(zlogcat,"fail to sample timer_create");
 	exit(-1);
     }
 
@@ -1812,7 +1884,7 @@ int main(int argc,char *argv[])
 
     info_local = localtime(&rawtime);
     zlog_debug(zlogcat,"Current local clock:\n");
-    zlog_debug("LOCAL: %4d%02d%02d%02d%02d%02d\n\n", (info_local->tm_year + 1900),
+    zlog_debug(zlogcat,"LOCAL: %4d%02d%02d%02d%02d%02d\n\n", (info_local->tm_year + 1900),
 			(info_local->tm_mon + 1),info_local->tm_mday,info_local->tm_hour, 
 			info_local->tm_min,info_local->tm_sec);
 	
@@ -1822,9 +1894,11 @@ int main(int argc,char *argv[])
     itimer_init(info,&it_sample,interval.sample_interval);
 	
     if (timer_settime(timerid_sample, 0, &it_sample, NULL) == -1) {
-	zlog_err(zlogcat,"fail to sample timer_settime");
+	zlog_error(zlogcat,"fail to sample timer_settime");
 	exit(-1);
     }
+#endif
+
     zlog_debug(zlogcat,"sbs communication server\n");
 
     /*init socket file and handle*/
