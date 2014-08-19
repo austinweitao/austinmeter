@@ -69,6 +69,14 @@ enum MsgType
     MSG_SBS_TEST,
 };
 
+union ATTRValue
+{
+    uint32_t value_uint32;
+    int32_t value_int32_t;
+    float value_float;
+    int64_t value_int64_t;
+};
+
 typedef struct{
     int addr;	// meter attribute register start address
     int reg_num;	//meter attribute register number
@@ -164,6 +172,7 @@ float modbus_get_float_cdab(uint16_t* value)
 
    return f;
 }
+
 static int ftp_uci_get_option(char *option, char *value)
 {
 	int ret = UCI_OK;
@@ -306,7 +315,7 @@ static int uci_do_add(struct uci_context *ctx,struct uci_package *pkg,char *sect
 
 	for(i = 0; i < meter->attr_num; i++,attribute++)
 	{
-	    sprintf(ptr_str,"meter_lastvalue.%s.%s=%d",s->e.name,attribute->value_unit,0);
+	    sprintf(ptr_str,"meter_lastvalue.%s.%d=%d",s->e.name,attribute->addr,0);
 	    zlog_debug(zlogcat,"ptr_str is %s.\n",ptr_str);
 
 	    if( ret = uci_set_option(ctx,ptr_str) != UCI_OK){
@@ -1350,12 +1359,11 @@ void timer_thread_sample(union sigval v)
 	    char option_value[64] = {0};
 	    float attr_lastvalue;
 
-	    sprintf(attr_option,"meter_lastvalue.%s.%s",meter->name,attribute->value_unit);
+	    sprintf(attr_option,"meter_lastvalue.%s.%d",meter->name,attribute->addr);
 	    zlog_debug(zlogcat,"attr_option is %s.\n",attr_option);
-
 	    ftp_uci_get_option(attr_option,option_value);
-	    attr_lastvalue = atof(option_value);
 
+	    attr_lastvalue = atof(option_value);
 	    zlog_debug(zlogcat,"attr_lastvalue is %f.\n",attr_lastvalue);
 
     	    /* Single register */
@@ -1363,10 +1371,10 @@ void timer_thread_sample(union sigval v)
 	    zlog_debug(zlogcat,"addr is %d.\n",attribute->addr);
 
 	    rc = modbus_read_registers(ctx_modbus,attribute->addr,attribute->reg_num,tab_rp_registers);
+
+	    float attr_value;
     	    if (rc == attribute->reg_num) 
 	    {
-
-		float attr_value;
 
 		if(!strcmp(attribute->value_type,"float")){
 		    zlog_debug(zlogcat,"attribute value_type is float.\n");
@@ -1378,7 +1386,8 @@ void timer_thread_sample(union sigval v)
 		    attr_value = modbus_get_float_cdab(tab_rp_registers);
 		}
 
-		sprintf(attr_option,"meter_lastvalue.%s.%s=%f",meter->name,attribute->value_unit,attr_value);
+
+		sprintf(attr_option,"meter_lastvalue.%s.%d=%f",meter->name,attribute->addr,attr_value);
 		zlog_debug(zlogcat,"attr_option is %s.\n",attr_option);
 
 		if( ret = uci_set_option(ctx_uci,attr_option) != UCI_OK){
@@ -1394,51 +1403,55 @@ void timer_thread_sample(union sigval v)
 
 		    zlog_debug(zlogcat,"attr_value is %f.\n",attr_value);
 		}
+	    }
+	    else   //failed to read the register value, use the last value
+	    {
+		zlog_error(zlogcat,"failed to read attribute register %d\n",attribute->addr);
+		attr_value = attr_lastvalue;
+
+	    }
 		
 	        //xml
-		if(meter_opfm == xml){
+	    if(meter_opfm == xml){
 
-		    fprintf(meter->file,"    <MeterData schema=\"Default\" version=\"1.0.0\">\n      <AcquistionDateTime>%s</AcquisitionDateTime>\n      <Value>%f</Value>\n      <MeterLocalId>%s</MeterLocalId>\n    </MeterData>\n",time_utc_xml,attr_value,attribute->tagid);
+		 fprintf(meter->file,"    <MeterData schema=\"Default\" version=\"1.0.0\">\n      <AcquistionDateTime>%s</AcquisitionDateTime>\n      <Value>%f</Value>\n      <MeterLocalId>%s</MeterLocalId>\n    </MeterData>\n",time_utc_xml,attr_value,attribute->tagid);
 
-		    fflush(meter->file);
-		}
+		 fflush(meter->file);
+	    }
 		//csv
-		else if(meter_opfm == csv){
+	    else if(meter_opfm == csv){
 		
-		    fprintf(meter->file,"%s,%f,%s\n",time_utc_csv,attr_value,attribute->tagid);
-		    fflush(meter->file);
+		fprintf(meter->file,"%s,%f,%s\n",time_utc_csv,attr_value,attribute->tagid);
+		fflush(meter->file);
 
-		}
-		else{
+	    }
+	    else{
 
-		    second_trans(interval.sample_interval,interval_string);
+		second_trans(interval.sample_interval,interval_string);
 
-		    if(counter == 1){
+		if(counter == 1){
 
-			fprintf(meter->file,"%s,%s,,%s,\"%s\\%s|%s\\%s\",%s,%s,%s,%s,%s,%d,%s,%d,%s,,%f#",
+		    fprintf(meter->file,"%s,%s,,%s,\"%s\\%s|%s\\%s\",%s,%s,%s,%s,%s,%d,%s,%d,%s,,%f#",
 			"MEPMD01,19970819",meter->sender_id,meter->receiver_id,meter->customer_id,
 			meter->customer_name,meter->account_id,meter->account_name,time_local,
 			meter->meter_id,"OK",meter->commodity,attribute->value_unit,
 			attribute->constant,interval_string,
 			get_upload_interval() / get_sample_interval(),time_utc,attr_value);
 
+		}
+		else{
+
+		    if( i == meter->attr_num -1){	
+			fprintf(meter->file,",,,%f",attr_value);
 		    }
+
 		    else{
-
-			if( i == meter->attr_num -1){	
-			    fprintf(meter->file,",,,%f",attr_value);
-			}
-
-			else{
-			    fprintf(meter->file,",,,%f#",attr_value);
-			}
-
-			fflush(meter->file);
+			fprintf(meter->file,",,,%f#",attr_value);
 		    }
+
+		    fflush(meter->file);
 		}
 	    }
-	    else
-		zlog_error(zlogcat,"failed to read attribute register %d\n",attribute->addr);
 
 	}
 
@@ -1770,7 +1783,7 @@ int main(int argc,char *argv[])
 
     int zlogrc;
 
-    zlogrc = zlog_init("test_level.conf");
+    zlogrc = zlog_init("/etc/test_level.conf");
     if(zlogrc)
     {
 	printf("zlog init failed.\n");
@@ -1827,15 +1840,16 @@ int main(int argc,char *argv[])
         addr=(Meter*) l->data;
     	zlog_debug(zlogcat,"Node: %d\n", ++n);
     	zlog_debug(zlogcat,"modbus_id:  %d\n",addr->modbus_id);
+    	zlog_debug(zlogcat,"attr_num:  %d\n",addr->attr_num);
 
     	Meter_Attribute *attribute = addr->attribute;
     	int i;
     	for(i = 0; i < addr->attr_num && attribute; i++,attribute++){
-	   zlog_debug(zlogcat,"  %d\n",attribute->addr);
-	   zlog_debug(zlogcat,"  %d\n",attribute->reg_num);
-	   zlog_debug(zlogcat,"  %d\n",attribute->constant);
-	   zlog_debug(zlogcat,"  %s\n",attribute->value_type);
-	   zlog_debug(zlogcat,"  %s\n",attribute->value_unit);
+	   zlog_debug(zlogcat,"attribute->addr:  %d\n",attribute->addr);
+	   zlog_debug(zlogcat,"attribute->reg_num:  %d\n",attribute->reg_num);
+	   zlog_debug(zlogcat,"attribute->constant:  %d\n",attribute->constant);
+	   zlog_debug(zlogcat,"attribute->value_type:  %s\n",attribute->value_type);
+	   zlog_debug(zlogcat,"attribute->value_unit  %s\n",attribute->value_unit);
 	   zlog_debug(zlogcat,"\n");
    	 }
     }
