@@ -126,103 +126,19 @@ int main(int argc, char *argv[])
     /** HOLDING REGISTERS **/
 
     /* Single register */
-    rc = modbus_read_registers(ctx, 3900,
+
+
+    rc = modbus_read_registers(ctx, 3910,
                                2, tab_rp_registers);
-    printf("modbus_read_registers 3900: ");
+    printf("modbus_read_registers 3910: ");
     if (rc != 2) {
         printf("FAILED (nb points %d)\n", rc);
         goto close;
     }
     float_value = modbus_get_float(tab_rp_registers);
-    printf("3900:float value is %f\n",float_value);  
+    printf("3910:float value is %f\n",float_value);  
     float_value = modbus_get_float_cdab(tab_rp_registers);
-    printf("3900:float cdab value is %f\n",float_value);  
-    printf("OK\n");
-
-    rc = modbus_read_registers(ctx, 3902,
-                               2, tab_rp_registers);
-    printf("modbus_read_registers 3902: ");
-    if (rc != 2) {
-        printf("FAILED (nb points %d)\n", rc);
-        goto close;
-    }
-    float_value = modbus_get_float(tab_rp_registers);
-    printf("3992:float value is %f\n",float_value);  
-    float_value = modbus_get_float_cdab(tab_rp_registers);
-    printf("3992:float cdab value is %f\n",float_value);  
-
-    rc = modbus_read_registers(ctx, 3904,
-                               2, tab_rp_registers);
-    printf("modbus_read_registers 3904: ");
-    if (rc != 2) {
-        printf("FAILED (nb points %d)\n", rc);
-        goto close;
-    }
-    float_value = modbus_get_float(tab_rp_registers);
-    printf("3904:float value is %f\n",float_value);  
-    float_value = modbus_get_float_cdab(tab_rp_registers);
-    printf("3904:float cdab value is %f\n",float_value);  
-
-    rc = modbus_read_registers(ctx, 3958,
-                               2, tab_rp_registers);
-    printf("modbus_read_registers 3958: ");
-    if (rc != 2) {
-        printf("FAILED (nb points %d)\n", rc);
-        goto close;
-    }
-    float_value = modbus_get_float(tab_rp_registers);
-    printf("3958:float value is %f\n",float_value);  
-    float_value = modbus_get_float_cdab(tab_rp_registers);
-    printf("3958:float cdab value is %f\n",float_value);  
-
-    rc = modbus_read_registers(ctx, 3960,
-                               2, tab_rp_registers);
-    printf("modbus_read_registers 3960: ");
-    if (rc != 2) {
-        printf("FAILED (nb points %d)\n", rc);
-        goto close;
-    }
-    float_value = modbus_get_float(tab_rp_registers);
-    printf("3960:float value is %f\n",float_value);  
-    float_value = modbus_get_float_cdab(tab_rp_registers);
-    printf("3960:float cdab value is %f\n",float_value);  
-
-
-    rc = modbus_read_registers(ctx, 3962,
-                               2, tab_rp_registers);
-    printf("modbus_read_registers 3962: ");
-    if (rc != 2) {
-        printf("FAILED (nb points %d)\n", rc);
-        goto close;
-    }
-    float_value = modbus_get_float(tab_rp_registers);
-    printf("3962:float value is %f\n",float_value);  
-    float_value = modbus_get_float_cdab(tab_rp_registers);
-    printf("3962:float cdab value is %f\n",float_value);  
-
-    rc = modbus_read_registers(ctx, 3908,
-                               2, tab_rp_registers);
-    printf("modbus_read_registers 3908: ");
-    if (rc != 2) {
-        printf("FAILED (nb points %d)\n", rc);
-        goto close;
-    }
-    float_value = modbus_get_float(tab_rp_registers);
-    printf("3908:float value is %f\n",float_value);  
-    float_value = modbus_get_float_cdab(tab_rp_registers);
-    printf("3908:float cdab value is %f\n",float_value);  
-
-    rc = modbus_read_registers(ctx, 3909,
-                               2, tab_rp_registers);
-    printf("modbus_read_registers 3909: ");
-    if (rc != 2) {
-        printf("FAILED (nb points %d)\n", rc);
-        goto close;
-    }
-    float_value = modbus_get_float(tab_rp_registers);
-    printf("3909:float value is %f\n",float_value);  
-    float_value = modbus_get_float_cdab(tab_rp_registers);
-    printf("3909:float cdab value is %f\n",float_value);  
+    printf("3910:float cdab value is %f\n",float_value);  
 close:
     /* Free the memory */
     free(tab_rp_bits);

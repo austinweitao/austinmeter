@@ -42,6 +42,7 @@ enum MsgType
     MSG_SBS_METER_STATUS,
     MSG_SBS_REBOOT,
     MSG_SBS_TEST,
+    MSG_SBS_QUERY,
 };
 
 /*module operation by showmodule(...) EventNotify*/
