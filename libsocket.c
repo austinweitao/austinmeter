@@ -42,7 +42,10 @@ enum MsgType
     MSG_SBS_METER_STATUS,
     MSG_SBS_REBOOT,
     MSG_SBS_TEST,
-    MSG_SBS_QUERY,
+    MSG_SBS_SET_QUERY_REG_CFG,
+    MSG_SBS_GET_QUERY_REG_VALUE,
+    MSG_SBS_FTP_UPLOAD,
+
 };
 
 /*module operation by showmodule(...) EventNotify*/
@@ -517,7 +520,7 @@ int callHostFunc(int nApiID,int fromModule,MSG_BODY	*MsgBody,int len)
 		if (FunctionHostCall.pSBS_MsgProc!= NULL)
 		{
 			iret = FunctionHostCall.pSBS_MsgProc(MsgBody->iParam[0],MsgBody->iParam[1],MsgBody->iParam[2],
-				MsgBody->iParam[3],MsgBody->sParam,len-BODY_INT_LEN);
+				MsgBody->iParam[3],MsgBody->iParam[4], MsgBody->sParam,len-BODY_INT_LEN);
 		}		
 		break;
 		case MSG_GET_VALUE:
@@ -749,6 +752,41 @@ int SBS_GetMeterInfo(char** info, int buf_size)
 		return -1;
 	else 
 		return ret;
+}
+
+int SBS_SetQueryRegCfg(int modbusID, int regAddr, int regNum)
+{
+	int ret = SendMessage(MODULE_SERVER, MSG_PROC, MODULE_CLIENT, 
+		MSG_SBS_SET_QUERY_REG_CFG, modbusID, regAddr, regNum, NULL, 0);
+	if(ret == -1)
+		return -1;
+	else
+	    return 0;
+}
+int SBS_GetQueryRegValue(char **value, int buf_size)
+{
+    if(value == NULL)
+	return -1;
+    
+    int ret;
+    ret = GetValue(MODULE_SERVER,MSG_GET_VALUE,MODULE_CLIENT,
+				MSG_SBS_GET_QUERY_REG_VALUE,NULL,NULL, value, buf_size);
+
+    if(ret = -1)
+	return -1;
+    else    
+	return 0;
+}
+
+int SBS_FtpUpload()
+{
+	int ret = SendMessage(MODULE_SERVER, MSG_PROC, MODULE_CLIENT, 
+		MSG_SBS_FTP_UPLOAD, 0, 0, 0, NULL, 0);
+	if(ret == -1)
+		return -1;
+	else
+	    return 0;
+
 }
 
 /*

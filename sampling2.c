@@ -67,7 +67,15 @@ enum MsgType
     MSG_SBS_METER_STATUS,
     MSG_SBS_REBOOT,
     MSG_SBS_TEST,
+    MSG_SBS_SET_QUERY_REG_CFG,
+    MSG_SBS_GET_QUERY_REG_VALUE,
+    MSG_SBS_FTP_UPLOAD,
 };
+
+typedef struct{
+    char *file_path;
+    char *file_name;
+}Upload_Args;
 
 union ATTRValue
 {
@@ -1534,24 +1542,36 @@ void timer_thread_sample(union sigval v)
 		zlog_error(zlogcat,"system call error:%s.\n",args); 
 	 }
 
+
 	 char error_str[128] = {0};
 	 if ( 0 != upload_file(file_path,file_name,error_str) )
 	    zlog_error(zlogcat,"failed to upload file:%s.\n",file_path);
     }
 }
 //CallBack
+static int req_modbusid, req_regaddr, req_regnum;
 
-int SBS_MsgProc(int SrcModuleID,int MsgType,int wParam,int lParam,char* StringParam,int len)
+int SBS_MsgProc(int SrcModuleID,int MsgType,int param1,int param2, int param3,char* StringParam,int len)
 {
     int iret = 0;
-    zlog_info(zlogcat,"Received: SrcModuleID=%d MessageID=%d wParam=%d lParam=%d StringParam=%s len=%d\n",
-		SrcModuleID, MsgType, wParam, lParam, StringParam, len);
+    zlog_info(zlogcat,"Received: SrcModuleID=%d MessageID=%d param1=%d Param2=%d Param3=%d StringParam=%s len=%d\n",
+		SrcModuleID, MsgType, param1, param2,param3, StringParam, len);
     switch(MsgType)
 	{
         case MSG_SBS_REBOOT:
 	    zlog_debug(zlogcat,"about to send SIGINT to %d.\n",mainpid);
 	    kill(mainpid,SIGINT);
             break;
+	case MSG_SBS_FTP_UPLOAD:
+	    zlog_debug(zlogcat,"MSG_SBS_FTP_UPLOAD.\n");
+	    break;
+	case MSG_SBS_SET_QUERY_REG_CFG:
+	    zlog_debug(zlogcat,"MSG_SBS_SET_QUERY_REG_CFG,modbusID=%d,regAddr=%d,regNum=%d.\n",param1,param2,param3);   
+	    req_modbusid = param1;
+	    req_regaddr = param2;
+	    req_regnum = param3;
+	    break;
+	    
         default:
             break;
     }
@@ -1763,7 +1783,79 @@ int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,cha
 	    printf("str is %s.\n",str);
             *len = strlen(str);
         }
-            break;
+	break;
+	case MSG_SBS_GET_QUERY_REG_VALUE:
+	{
+
+	    zlog_info(zlogcat,"receive meter reading register request.\n");
+	    zlog_debug(zlogcat,"req_modbusid:%d.\n",req_modbusid);
+	    zlog_debug(zlogcat,"req_regaddr:%d.\n",req_regaddr);
+	    zlog_debug(zlogcat,"req_regnum:%d.\n",req_regnum);
+
+	    zlog_debug(zlogcat,"meter_status:tring to lock uart_mutex .\n");
+
+	    pthread_mutex_lock(&uart_mutex);
+
+	    zlog_debug(zlogcat,"meter_status:get the uart_mutex lock.\n");
+
+	    uint8_t *tab_rp_bits;
+	    uint16_t *tab_rp_registers;
+	    modbus_t *ctx_modbus;
+	    int i;
+	    uint8_t value;
+	    int nb_points;
+	    int rc;
+	    char interval_string[16];
+
+	    char meter_status[32] = {0};
+	
+	    ctx_modbus = modbus_new_rtu("/dev/ttyUSB0", uart_config->baudrate, uart_config->parity, 
+						    uart_config->databits, uart_config->stopbits);
+	    if (ctx_modbus == NULL) {
+		sprintf(str, "0|Unable to allocate libmodbus context");
+		return 0;
+	    }
+	    modbus_set_debug(ctx_modbus, TRUE);
+	    modbus_set_error_recovery(ctx_modbus,
+					MODBUS_ERROR_RECOVERY_LINK | MODBUS_ERROR_RECOVERY_PROTOCOL);
+	    if (modbus_connect(ctx_modbus) == -1) {
+		sprintf(str, "0|modbus Connection failed: %s", modbus_strerror(errno));
+		modbus_free(ctx_modbus);
+		return 0;
+	    }
+	    /* Allocate and initialize the memory to store the bits */
+	    nb_points = 64; //maximum reading registers number is 64
+	    tab_rp_registers = (uint16_t *) malloc(nb_points * sizeof(uint16_t));
+	    memset(tab_rp_registers, 0, nb_points * sizeof(uint16_t));
+
+
+	    modbus_set_slave(ctx_modbus, req_modbusid);
+
+	    rc = modbus_read_registers(ctx_modbus,
+			    req_regaddr,req_regnum,tab_rp_registers);
+
+	    if (rc == req_regnum)  
+	    {
+		for(i = 0; i < req_regnum; i++){
+		    sprintf(meter_status,"<%04X>",tab_rp_registers[i]);
+		    strcat(str,meter_status);
+		}
+	    }
+
+	    else {
+		strcat(str,meter_status);
+	    }
+
+	    zlog_debug(zlogcat,"returned str is %s.\n",str);
+	    free(tab_rp_bits);
+	    free(tab_rp_registers);
+	    modbus_close(ctx_modbus);
+	    modbus_free(ctx_modbus);
+	    printf("tring to unlock uart_mutex .\n");
+	    pthread_mutex_unlock(&uart_mutex);
+
+	}
+        break;
         default:
             break;
     }

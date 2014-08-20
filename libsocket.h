@@ -22,6 +22,9 @@ int SBS_CaptureReboot();
 int SBS_GetFtpTestResult(char** status, int buf_size);
 int SBS_GetMeterStatus(char** status, int buf_size);
 int SBS_GetMeterInfo(char** info, int buf_size);
+int SBS_SetQueryRegCfg(int modbusID, int regAddr, int regNum);
+int SBS_GetQueryRegValue(char **value, int buf_size);
+int SBS_FtpUpload();
 
 #define CALLBACK 
 
@@ -32,7 +35,7 @@ typedef int (CALLBACK* pFuncSBS_GetPicture)(char* path, int len);
 typedef int (CALLBACK* pFuncSBS_GetVideo)(char* path, int len);
 
 
-typedef int (CALLBACK* pFuncSBS_MsgProc)(int SrcModuleID,int MessageID,int wParam,int lParam,char* StringParam,int len);
+typedef int (CALLBACK* pFuncSBS_MsgProc)(int SrcModuleID,int MessageID,int Param1,int Param2,int Param3,char* StringParam,int len);
 
 typedef int (CALLBACK* pFuncSBS_GetValue)(int SrcModuleID,int MessageID,int *param1,int *param2,char** StringParam,int *len);
 
