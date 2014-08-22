@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <dirent.h>
 
 #include "sll.h"
 #include <errno.h>
@@ -61,6 +62,13 @@
 #define SECSPERHOUR 3600
 #define SECSPERMIN 60	
 /*=====================defined struct================================*/
+
+typedef struct{
+    char file_to_upload[512];
+    char rename_to[256];
+    char error_str[256];
+}FTP_Thread_Args;
+
 enum MsgType
 {
     MSG_SBS_FTP_TEST=0,
@@ -163,6 +171,13 @@ Interval interval;
 pthread_mutex_t uart_mutex;
 
 zlog_category_t *zlogcat;
+
+
+pthread_t ftp_thread;
+pthread_mutex_t ftp_mutex;
+pthread_cond_t ftp_cond;
+
+FTP_Thread_Args ftp_thread_args;
 /*===========================end=======================================*/
 
 
@@ -1290,7 +1305,7 @@ void timer_thread_sample(union sigval v)
 
     zlog_debug(zlogcat,"thread_sample: get the uart_mutex lock.\n");
 
-    ctx_modbus = modbus_new_rtu("/dev/ttyUSB0", uart_config->baudrate, uart_config->parity, 
+    ctx_modbus = modbus_new_rtu("/dev/ttyS0", uart_config->baudrate, uart_config->parity, 
 						uart_config->databits, uart_config->stopbits);
     if (ctx_modbus == NULL) {
 	zlog_error(zlogcat,"thread_sample: modbus_new_rtu--Unable to allocate libmodbus context\n");
@@ -1542,10 +1557,25 @@ void timer_thread_sample(union sigval v)
 		zlog_error(zlogcat,"system call error:%s.\n",args); 
 	 }
 
-
+#if 0
 	 char error_str[128] = {0};
 	 if ( 0 != upload_file(file_path,file_name,error_str) )
 	    zlog_error(zlogcat,"failed to upload file:%s.\n",file_path);
+#endif
+
+	pthread_mutex_lock(&ftp_mutex);
+	zlog_debug(zlogcat,"about to signal ftp_cond.\n");
+
+#if 0
+	strcpy(ftp_thread_args.file_to_upload,file_path);
+	zlog_debug(zlogcat,"ftp_thread_args.file_to_upload:%s.\n",ftp_thread_args.file_to_upload);
+	strcpy(ftp_thread_args.rename_to,file_name);
+	zlog_debug(zlogcat,"ftp_thread_args.rename_to:%s.\n",ftp_thread_args.rename_to);
+#endif
+
+	pthread_cond_signal(&ftp_cond);
+
+	pthread_mutex_unlock(&ftp_mutex);
     }
 }
 //CallBack
@@ -1633,7 +1663,7 @@ int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,cha
 		Meter_Attribute *attribute;
 		char meter_status[32] = {0};
 	    
-		ctx_modbus = modbus_new_rtu("/dev/ttyUSB0", uart_config->baudrate, uart_config->parity, 
+		ctx_modbus = modbus_new_rtu("/dev/ttyS0", uart_config->baudrate, uart_config->parity, 
 							uart_config->databits, uart_config->stopbits);
 		if (ctx_modbus == NULL) {
 		    sprintf(str, "0|Unable to allocate libmodbus context");
@@ -1718,7 +1748,7 @@ int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,cha
 		int rc;
 		char interval_string[16];
 
-		ctx = modbus_new_rtu("/dev/ttyUSB0", 19200, 'N', 8, 1);
+		ctx = modbus_new_rtu("/dev/ttyS0", 19200, 'N', 8, 1);
 		if (ctx == NULL) {
 		    fprintf(stderr, "Unable to allocate libmodbus context\n");
 		    exit -1;
@@ -1809,7 +1839,7 @@ int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,cha
 
 	    char meter_status[32] = {0};
 	
-	    ctx_modbus = modbus_new_rtu("/dev/ttyUSB0", uart_config->baudrate, uart_config->parity, 
+	    ctx_modbus = modbus_new_rtu("/dev/ttyS0", uart_config->baudrate, uart_config->parity, 
 						    uart_config->databits, uart_config->stopbits);
 	    if (ctx_modbus == NULL) {
 		sprintf(str, "0|Unable to allocate libmodbus context");
@@ -1837,7 +1867,7 @@ int SBS_GetValue_Proc(int SrcModuleID, int MessageID,int *param1,int *param2,cha
 	    if (rc == req_regnum)  
 	    {
 		for(i = 0; i < req_regnum; i++){
-		    sprintf(meter_status,"<%04X>",tab_rp_registers[i]);
+		    sprintf(meter_status,"[%04X]",tab_rp_registers[i]);
 		    strcat(str,meter_status);
 		}
 	    }
@@ -1868,6 +1898,80 @@ void sig_handler(int sig_no)
 	zlog_info(zlogcat,"main thread catch signal interrupt,about to restart\n");
 }
 
+void* ftp_upload_thread(void *args)
+{
+
+    while(1){
+	
+	pthread_mutex_lock(&ftp_mutex);
+	zlog_debug(zlogcat,"in ftp_upload_thread, get the fpt_mutex lock.\n");
+	zlog_debug(zlogcat,"about to cond_wait.\n");
+	pthread_cond_wait(&ftp_cond,&ftp_mutex);
+
+	pthread_mutex_unlock(&ftp_mutex);
+
+	zlog_debug(zlogcat,"cond has been signaled by others.\n");
+	zlog_debug(zlogcat,"about to upload file.\n");
+#if 0
+	zlog_debug(zlogcat,"ftp_thread_args.file_to_upload:%s.\n",ftp_thread_args.file_to_upload);
+	zlog_debug(zlogcat,"ftp_thread_args.rename_to:%s.\n",ftp_thread_args.rename_to);
+	zlog_debug(zlogcat,"ftp_thread_args.error_str:%s.\n",ftp_thread_args.error_str);
+	upload_file(ftp_thread_args.file_to_upload,ftp_thread_args.rename_to,ftp_thread_args.error_str);
+#endif
+
+	DIR *d;
+	struct dirent *dir;
+
+	char new_name[256] = {0};
+	char old_name[256] = {0};
+
+	char *tmp;
+	char postfix[8] = {0};
+	char error_str[128] = {0};
+
+	switch(meter_opfm){
+	    case cmep: strcpy(postfix,"cmep");break;
+	    case xml : strcpy(postfix,"xml");break;
+	    case csv : strcpy(postfix,"csv");break;
+	}
+
+	d = opendir(METER_FILE_LOCATION);
+
+	if(d)
+	{
+	    while((dir = readdir(d)) != NULL)	
+	    {
+		if((tmp = strstr(dir->d_name,postfix)) != NULL && 
+					strcmp(tmp,postfix) == 0)
+		{
+		    sprintf(old_name,"%s%s",METER_FILE_LOCATION,dir->d_name);
+		    zlog_debug(zlogcat,"old name is %s.\n",old_name);
+
+		    zlog_debug(zlogcat,"about to upload file:%s.\n",old_name);
+		    if ( 0 != upload_file(old_name,dir->d_name,error_str))
+		    {
+			zlog_error(zlogcat,"failed to upload file:%s.\n",old_name);
+			zlog_error(zlogcat,"Reason:%s.\n",error_str);
+		    }
+		    else
+		    {
+			zlog_info(zlogcat,"done uploading file:%s.\n",old_name);
+			sprintf(new_name,"%s%s.done",METER_FILE_LOCATION,dir->d_name);
+			zlog_debug(zlogcat,"new name is %s.\n",new_name);
+			if(0 != rename(old_name,new_name))
+			    zlog_error(zlogcat,"rename failed:%s.\n",strerror(errno));
+		    }
+		}
+			
+	    }
+	    closedir(d);
+	}
+	zlog_debug(zlogcat,"dir opened 2.\n");
+
+    }
+
+}
+
 int main(int argc,char *argv[])
 {
     //save the current pid;
@@ -1893,13 +1997,29 @@ int main(int argc,char *argv[])
     zlog_info(zlogcat,"hello,zlog -info.\n");
 
 
-
-    //register signal SIGINT handler
+    //init uart_mutex
     if(0 != pthread_mutex_init(&uart_mutex,NULL))
     {
 	zlog_error(zlogcat,"uart_mutext init failed.\n");
 	return -1;
     }
+
+    //init ftp_mutex
+    if(0 != pthread_mutex_init(&ftp_mutex,NULL))
+    {
+	zlog_error(zlogcat,"ftp_mutext init failed.\n");
+	return -1;
+    }
+
+    //init ftp_cond
+    if(0 != pthread_mutex_init(&ftp_mutex,NULL))
+    {
+	zlog_error(zlogcat,"ftp_mutext init failed.\n");
+	return -1;
+    }
+
+    pthread_create(&ftp_thread,NULL,ftp_upload_thread,(void * )NULL);
+
 
     if( signal(SIGINT,sig_handler) == SIG_ERR)
 	zlog_error(zlogcat,"failed to register SIGINT handler.\n");
@@ -2020,6 +2140,10 @@ int main(int argc,char *argv[])
 
 //free memory section
     zlog_fini();
+
+    pthread_mutex_destroy(&uart_mutex);
+    pthread_mutex_destroy(&ftp_mutex);
+    pthread_cond_destroy(&ftp_cond);
 
 //end 
     execv(argv[0],argv);
